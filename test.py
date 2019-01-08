@@ -17,35 +17,29 @@ for c_m in c.modifications:
     blame_modification(git_repo, c, c_m)    
 
 #%%
-def get_added_line_num(added_lines, deleted_lines, pre_line_num):
+def line_num_pre_to_post(added_lines, deleted_lines, pre_line_num, offset = 0):
     post_line_num = pre_line_num
-    """print('Added Lines')
-    print('--------------')
-    for n, l in added_lines.items():
-        if n < pre_line_num:
-            print(str(n) + ': ' + l)
-
-    print('Deleted Lines')
-    print('--------------')
-    for n, l in deleted_lines.items():
-        if n < pre_line_num:
-            print(str(n) + ': ' + l)         """
     
-    print('Deleted Lines')
     print('--------------')
+    print('deleted lines up to line ' + str(pre_line_num))
+    deleted = 0
     for x in deleted_lines:
         if x < pre_line_num:
             print(str(x) + ': ' + deleted_lines[x])
-            post_line_num -= 1
+            deleted += 1            
 
-    print('Added Lines')
+    # how many added lines have been deleted as well?
+    added = 0
+
+    print('--------------')
+    print('added lines')
     print('--------------')
     for x in added_lines:
-        if x < post_line_num:
+        if x < pre_line_num:
             print(str(x) + ': ' + added_lines[x])
-            post_line_num += 1
-
-    return post_line_num
+            added += 1
+    print('--------------')
+    return pre_line_num + added + offset
 
 
 def blame_modification(git_repo, commit, mod):
@@ -57,31 +51,38 @@ def blame_modification(git_repo, commit, mod):
     print('=======================')
 
     diff = git_repo.parse_diff(mod.diff)
+    print('diff = ' + mod.diff)    
     deleted_lines = { x[0]:x[1] for x in git_repo.parse_diff(mod.diff)['deleted'] }
     added_lines = { x[0]:x[1] for x in git_repo.parse_diff(mod.diff)['added'] }
-    # print(added_lines)
-
+    offset = 0
     try:
         blame = git_repo.git.blame(commit.hash + '^', '--', path).split('\n')
         for num_line, line in deleted_lines.items():
             blame_fields = blame[num_line - 1].split(' ')
-            print('deleted line num = ', num_line)
-            print('deleted line = ', line)
-            added_line_num = get_added_line_num(added_lines, deleted_lines, num_line)
-            print('added line num = ', added_line_num)
-            print('added line = ', added_lines[added_line_num])
-            print('blame = ', blame[num_line-1])
+
             buggy_commit_hash = blame_fields[0].replace('^', '')
-            buggy_commit = git_repo.get_commit(buggy_commit_hash)
-            print('----------------------------------')
-            print('Previous commit: ' + buggy_commit_hash)
-            print('Author: ' + buggy_commit.author.email)
-            print('Date: ' + buggy_commit.author_date.strftime('%Y-%m-%d %H:%M:%S'))
+            buggy_commit = git_repo.get_commit(buggy_commit_hash)            
+            print('Previous commit: \t' + buggy_commit_hash)
+            print('Author: \t\t' + buggy_commit.author.email)
+            print('Date: \t\t\t' + buggy_commit.author_date.strftime('%Y-%m-%d %H:%M:%S'))
+
+            post_line_num = line_num_pre_to_post(added_lines, deleted_lines, num_line, offset)
+            print('deleted line num\t= ', num_line)
+            print('deleted line\t\t= ', line)
+            print('blame\t\t\t= ', blame[num_line-1])
+            print('added line num\t\t= ', post_line_num)
+            if post_line_num in added_lines:
+                print('replaced line\t\t= ', added_lines[post_line_num])
+            else:
+                offset -= 1
+                print('deleted line')
+            
             for buggy_mod in buggy_commit.modifications:
                 if buggy_mod.filename == mod.filename:                          
                     prev_diff = git_repo.parse_diff(buggy_mod.diff)                
                     # for x in prev_diff['added']:
                     #    print(x)
+            print('-----------------------------')
 
     except GitCommandError:
         logger.debug("Could not found file %s in commit %s. Probably a double rename!", mod.filename,

@@ -135,12 +135,13 @@ def extract_coedits(git_repo, commit, mod):
             c['pre_line_len'] = [len(line)]
             c['pre_line_num'] = [num_line]
             c['mod_filename'] = [mod.filename]
-            c['mod_cyclomatic_complexity'] = [mod.complexity()]
-            c['mod_loc'] = [mod.nloc()]
+            c['mod_cyclomatic_complexity'] = [mod.complexity]
+            c['mod_loc'] = [mod.nloc]
+            c['mod_old_path'] = [mod.old_path]
             c['mod_new_path'] = [path]
-            c['mod_token_count'] = [mod.token_count()]
-            c['mod_removed'] = [mod.removed()]
-            c['mod_added'] = [mod.added()]
+            c['mod_token_count'] = [mod.token_count]
+            c['mod_removed'] = [mod.removed]
+            c['mod_added'] = [mod.added]
             
 
             left_to_right = pre_to_post(git_repo, commit, mod)

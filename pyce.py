@@ -15,6 +15,8 @@ import pydriller as pydriller
 from pydriller.git_repository import GitCommandError
 from Levenshtein import distance as lev_dist
 
+from functools import lru_cache
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,7 +44,7 @@ def chunk_size(lines, k):
             chunk = False
     return chunksize
 
-def pre_to_post(git_repo, commit, mod):
+def pre_to_post(git_repo, mod):
     """
     Maps line numbers between the pre- and post-commit version
     of a modification.
@@ -54,16 +56,16 @@ def pre_to_post(git_repo, commit, mod):
     diff = git_repo.parse_diff(mod.diff)
     #print('diff = ' + mod.diff)
     
-    deleted_lines = { x[0]:x[1] for x in git_repo.parse_diff(mod.diff)['deleted'] }
-    added_lines = { x[0]:x[1] for x in git_repo.parse_diff(mod.diff)['added'] }
-    if added_lines:
-        max_added = max(added_lines.keys())
-    else:
-        max_added = 0
-    if deleted_lines:
-        max_deleted = max(deleted_lines.keys())
-    else:
-        max_deleted = 0
+    deleted_lines = { }
+    added_lines = { }
+    max_deleted = 0
+    max_added = 0
+    for x in diff['deleted']:
+        deleted_lines[x[0]] = x[1]
+        max_deleted = max(x[0], max_deleted)
+    for x in diff['added']:
+        added_lines[x[0]] = x[1]
+        max_added = max(x[0], max_added)
 
     # create mapping between pre and post edit line numbers
     left_to_right = {}
@@ -144,7 +146,7 @@ def extract_coedits(git_repo, commit, mod):
             c['mod_added'] = [mod.added]
             
 
-            left_to_right = pre_to_post(git_repo, commit, mod)
+            left_to_right = pre_to_post(git_repo, mod)
             right_to_left = { v:k for k,v in left_to_right.items() if v != False }
 
             #print('deleted line num\t= ', num_line)
@@ -172,9 +174,10 @@ def extract_coedits(git_repo, commit, mod):
     return df
 
 
-def process_commit(git_repo, commit):
+def process_commit(git_repo, commit, exclude_paths = set()):
     df_commit = pd.DataFrame()
     df_coedits = pd.DataFrame()
+    #print(commit.hash)
 
     # parse commit
     c = {}
@@ -186,6 +189,7 @@ def process_commit(git_repo, commit):
     c['author_date'] = [commit.author_date.strftime('%Y-%m-%d %H:%M:%S')]
     c['committer_date'] = [commit.committer_date.strftime('%Y-%m-%d %H:%M:%S')]
     c['committer_timezone'] = [commit.committer_timezone]
+    c['modifications'] = [len(commit.modifications)]
     c['msg_len'] = [len(commit.msg)]
     c['project_name'] = [commit.project_name]
     c['parents'] = [ ','.join(commit.parents)]
@@ -197,15 +201,33 @@ def process_commit(git_repo, commit):
     
     # parse modification
     for modification in commit.modifications:
-        df = extract_coedits(git_repo, commit, modification)
-        df_coedits = pd.concat([df_coedits, df])
+        exclude_file = False
+        excluded_path = ''
+        for x in exclude_paths:
+            if modification.new_path:
+                if modification.new_path.startswith(x+os.sep):
+                    exclude_file = True
+                    excluded_path = modification.new_path
+            if not exclude_file and modification.old_path:
+                if modification.old_path.startswith(x+os.sep):
+                    exclude_file = True
+                    excluded_path = modification.old_path
+        if not exclude_file:
+            df = extract_coedits(git_repo, commit, modification)
+            df_coedits = pd.concat([df_coedits, df])
+        #else:
+        #    print('skipping file {0} in commit {1}'.format(excluded_path, commit.hash))
     return df_commit, df_coedits
 
 
 
-def process_repo_serial(repo_string):
+def process_repo_serial(repo_string, exclude=None):
     
     git_repo = pydriller.GitRepository(repo_string)
+    exclude_paths = []
+    if exclude:
+        with open(exclude) as f:
+            exclude_paths = [x.strip() for x in f.readlines()]
     
     df_commits = pd.DataFrame()
     df_coedits = pd.DataFrame()
@@ -214,7 +236,7 @@ def process_repo_serial(repo_string):
     commits = [c for c in git_repo.get_list_commits()]
     with progressbar.ProgressBar(max_value=len(commits)) as bar:
         for commit in commits:
-            df_1, df_2 = process_commit(git_repo, commit)
+            df_1, df_2 = process_commit(git_repo, commit, exclude_paths)
             df_commits = pd.concat([df_commits, df_1])
             df_coedits = pd.concat([df_coedits, df_2])
             i += 1
@@ -225,10 +247,15 @@ semaphore = Semaphore(1)
 
 
 def process_commit_parallel(arg):
-    repo_string, commit_hash, sqlite_db_file = arg
+    repo_string, commit_hash, sqlite_db_file, exclude = arg
     git_repo = pydriller.GitRepository(repo_string)
 
-    df_1, df_2 = process_commit(git_repo, git_repo.get_commit(commit_hash))    
+    exclude_paths = []
+    if exclude:
+        with open(exclude) as f:
+            exclude_paths = [x.strip() for x in f.readlines()]
+
+    df_1, df_2 = process_commit(git_repo, git_repo.get_commit(commit_hash), exclude_paths)    
     
     with semaphore:
         con = sqlite3.connect(sqlite_db_file)
@@ -238,15 +265,15 @@ def process_commit_parallel(arg):
             df_2.to_sql('coedits', con, if_exists='append')
     return True
 
-def process_repo_parallel(repo_string, sqlite_db_file, num_processes=os.cpu_count()):
+def process_repo_parallel(repo_string, sqlite_db_file, num_processes=os.cpu_count(), exclude=None, chunksize=1):
     
     print('Using {0} workers.'.format(num_processes))    
     git_repo = pydriller.GitRepository(repo_string)
-    args = [ (repo_string, c.hash, sqlite_db_file) for c in git_repo.get_list_commits()]
+    args = [ (repo_string, c.hash, sqlite_db_file, exclude) for c in git_repo.get_list_commits()]
 
     p = Pool(num_processes)
     with progressbar.ProgressBar(max_value=len(args)) as bar:
-        for i,_ in enumerate(p.imap(process_commit_parallel, args)):
+        for i,_ in enumerate(p.imap_unordered(process_commit_parallel, args, chunksize=chunksize)):
             bar.update(i)
 
 
@@ -254,15 +281,17 @@ parser = argparse.ArgumentParser(description='Extracts commit and co-editing dat
 parser.add_argument('repo', help='path to repository to be parsed.', type=str)
 parser.add_argument('outfile', help='path to SQLite DB file storing results.', type=str)
 parser.add_argument('--parallel', help='use multi-core processing. Default.', dest='parallel', action='store_true')
+parser.add_argument('--exclude', help='exclude path prefixes in given file', type=str, default=None)
 parser.add_argument('--no-parallel', help='do not use multi-core processing.', dest='parallel', action='store_false')
 parser.add_argument('--numprocesses', help='number of CPU cores to use for multi-core processing. Defaults to number of CPU cores.', default=os.cpu_count(), type=int)
+parser.add_argument('--chunksize', help='chunk size to be used in multiprocessing.map.', default=1, type=int)
 parser.set_defaults(parallel=True)
 
 args = parser.parse_args()
 if args.parallel:
-    process_repo_parallel(repo_string=args.repo, sqlite_db_file=args.outfile, num_processes=args.numprocesses)
+    process_repo_parallel(repo_string=args.repo, sqlite_db_file=args.outfile, num_processes=args.numprocesses, exclude=args.exclude, chunksize=args.chunksize)
 else:
-    df_commits, df_coedits = process_repo_serial(args.repo)
+    df_commits, df_coedits = process_repo_serial(args.repo, args.exclude)
     con = sqlite3.connect(args.outfile)
     if not df_commits.empty:
         df_commits.to_sql('commits', con, if_exists='append')

@@ -145,11 +145,9 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
 
     left_to_right, chunks = pre_to_post(deleted_lines, added_lines)
 
-    print('use_blocks = ', use_blocks)
-
     try:
         blame = git_repo.git.blame(commit.hash + '^', '--', path).split('\n')
-        if 0=1: #use_blocks:
+        if use_blocks:
             for num_line, line in deleted_lines.items():
                 if num_line in chunks.keys():
                     chunk = chunks[num_line]
@@ -177,24 +175,23 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
                     for i in range(chunk[1], chunk[1] + chunk[2]):
                         added_chunk.append(added_lines[i])
 
-                    print(deleted_chunk)
-                    print(added_chunk)
-                    
+                    deleted_chunk = ''.join(deleted_chunk)
+                    added_chunk = ''.join(added_chunk)
 
-                    #c['pre_line_len'] = [len(line)]
-                    #c['pre_line_num'] = [num_line]
+                    c['pre_chunk_starting_line_num'] = [num_line]
+                    c['pre_chunk_len_in_lines'] = [chunk[0]]
+                    c['pre_chunk_len_in_chars'] = [len(deleted_chunk)]
 
-                    if left_to_right[num_line] in added_lines:
-                        c['post_line_len'] = [len(added_lines[left_to_right[num_line]])]
-                        c['post_line_num'] = [left_to_right[num_line]]
-                        c['levenshtein_dist'] = [lev_dist(added_lines[left_to_right[num_line]], line)]
-                        #print('added line\t\t= ', added_lines[left_to_right[num_line]])
-                        #print('levenshtein distance = ', lev_dist(added_lines[left_to_right[num_line]], line))
-                    else:
-                        #print('removed line')
-                        c['post_line_len'] = [0]
-                        c['post_line_num'] = [None]
+                    c['post_chunk_starting_line_num'] = [chunk[1]]
+                    c['post_chunk_len_in_lines'] = [chunk[2]]
+                    c['post_chunk_len_in_chars'] = [len(added_chunk)]
+
+                    # if no lines were added (only deletion)
+                    if chunk[2] == 0:
                         c['levenshtein_dist'] = [None]
+                    else:
+                        c['levenshtein_dist'] = [lev_dist(deleted_chunk, added_chunk)]
+
                     df_t = pd.DataFrame(c)
                     df = pd.concat([df, df_t])
         else:
@@ -339,11 +336,11 @@ def process_commit_parallel(arg):
             df_2.to_sql('coedits', con, if_exists='append')
     return True
 
-def process_repo_parallel(repo_string, sqlite_db_file, num_processes=os.cpu_count(), exclude=None, chunksize=1):
+def process_repo_parallel(repo_string, sqlite_db_file, num_processes=os.cpu_count(), exclude=None, chunksize=1, use_blocks=False):
     
     print('Using {0} workers.'.format(num_processes))    
     git_repo = pydriller.GitRepository(repo_string)
-    args = [ (repo_string, c.hash, sqlite_db_file, exclude) for c in git_repo.get_list_commits()]
+    args = [ (repo_string, c.hash, sqlite_db_file, exclude, use_blocks) for c in git_repo.get_list_commits()]
 
     p = Pool(num_processes)
     with progressbar.ProgressBar(max_value=len(args)) as bar:
@@ -365,7 +362,7 @@ parser.set_defaults(use_blocks=False)
 
 args = parser.parse_args()
 if args.parallel:
-    process_repo_parallel(repo_string=args.repo, sqlite_db_file=args.outfile, num_processes=args.numprocesses, exclude=args.exclude, chunksize=args.chunksize)
+    process_repo_parallel(repo_string=args.repo, sqlite_db_file=args.outfile, num_processes=args.numprocesses, exclude=args.exclude, chunksize=args.chunksize, use_blocks=args.use_blocks)
 else:
     df_commits, df_coedits = process_repo_serial(args.repo, args.exclude, use_blocks=args.use_blocks)
     con = sqlite3.connect(args.outfile)

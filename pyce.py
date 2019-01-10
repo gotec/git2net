@@ -97,7 +97,9 @@ def pre_to_post(deleted_lines, added_lines):
         chunk_added = chunk_size(added_lines, right)
         chunk_deleted = chunk_size(deleted_lines, left)
 
-        chunks[left] = (chunk_deleted, right, chunk_added)
+        # we ignore pure additions
+        if chunk_deleted > 0:
+            chunks[left] = (chunk_deleted, right, chunk_added)
 
         # deleted chunk is larger than added chunk
         if chunk_deleted > chunk_added:
@@ -129,60 +131,115 @@ def pre_to_post(deleted_lines, added_lines):
     return left_to_right, chunks
 
 
-def extract_coedits(git_repo, commit, mod):
+def extract_coedits(git_repo, commit, mod, use_blocks=False):
     
     df = pd.DataFrame()
 
     path = mod.new_path
-    deleted_lines = { x[0]:x[1] for x in git_repo.parse_diff(mod.diff)['deleted'] }
-    added_lines = { x[0]:x[1] for x in git_repo.parse_diff(mod.diff)['added'] }
+
+    diff = mod.diff
+    diff = diff.replace('\ No newline at end of file\n', '')
+
+    deleted_lines = { x[0]:x[1] for x in git_repo.parse_diff(diff)['deleted'] }
+    added_lines = { x[0]:x[1] for x in git_repo.parse_diff(diff)['added'] }
 
     left_to_right, chunks = pre_to_post(deleted_lines, added_lines)
 
+    print('use_blocks = ', use_blocks)
+
     try:
         blame = git_repo.git.blame(commit.hash + '^', '--', path).split('\n')
-        for num_line, line in deleted_lines.items():
-            blame_fields = blame[num_line - 1].split(' ')
-            buggy_commit_hash = blame_fields[0].replace('^', '')
-            #buggy_commit = git_repo.get_commit(buggy_commit_hash)
-            #print('Previous commit: \t' + buggy_commit_hash)
-            #print('Author: \t\t' + buggy_commit.author.email)
-            #print('Date: \t\t\t' + buggy_commit.author_date.strftime('%Y-%m-%d %H:%M:%S'))
-            #print('blame\t\t\t= ', blame[num_line-1])
+        if 0=1: #use_blocks:
+            for num_line, line in deleted_lines.items():
+                if num_line in chunks.keys():
+                    chunk = chunks[num_line]
 
-            c = {}
-            c['pre_commit'] = [buggy_commit_hash]
-            c['post_commit'] = [commit.hash]            
-            c['pre_line_len'] = [len(line)]
-            c['pre_line_num'] = [num_line]
-            c['mod_filename'] = [mod.filename]
-            c['mod_cyclomatic_complexity'] = [mod.complexity]
-            c['mod_loc'] = [mod.nloc]
-            c['mod_old_path'] = [mod.old_path]
-            c['mod_new_path'] = [path]
-            c['mod_token_count'] = [mod.token_count]
-            c['mod_removed'] = [mod.removed]
-            c['mod_added'] = [mod.added]
-            
-            #right_to_left = { v:k for k,v in left_to_right.items() if v != False }
+                    blame_fields = blame[num_line - 1].split(' ')
+                    buggy_commit_hash = blame_fields[0].replace('^', '')
 
-            #print('deleted line num\t= ', num_line)
-            #print('deleted line\t\t= ', line)
-            
-            #print('added line num\t\t= ', left_to_right[num_line])
-            if left_to_right[num_line] in added_lines:
-                c['post_line_len'] = [len(added_lines[left_to_right[num_line]])]
-                c['post_line_num'] = [left_to_right[num_line]]
-                c['levenshtein_dist'] = [lev_dist(added_lines[left_to_right[num_line]], line)]
-                #print('added line\t\t= ', added_lines[left_to_right[num_line]])
-                #print('levenshtein distance = ', lev_dist(added_lines[left_to_right[num_line]], line))
-            else:
-                #print('removed line')
-                c['post_line_len'] = [0]
-                c['post_line_num'] = [None]
-                c['levenshtein_dist'] = [None]
-            df_t = pd.DataFrame(c)
-            df = pd.concat([df, df_t])
+                    c = {}
+                    c['pre_commit'] = [buggy_commit_hash]
+                    c['post_commit'] = [commit.hash]
+                    c['mod_filename'] = [mod.filename]
+                    c['mod_cyclomatic_complexity'] = [mod.complexity]
+                    c['mod_loc'] = [mod.nloc]
+                    c['mod_old_path'] = [mod.old_path]
+                    c['mod_new_path'] = [path]
+                    c['mod_token_count'] = [mod.token_count]
+                    c['mod_removed'] = [mod.removed]
+                    c['mod_added'] = [mod.added]
+
+                    deleted_chunk = []
+                    for i in range(num_line, num_line + chunk[0]):
+                        deleted_chunk.append(deleted_lines[i])
+
+                    added_chunk = []
+                    for i in range(chunk[1], chunk[1] + chunk[2]):
+                        added_chunk.append(added_lines[i])
+
+                    print(deleted_chunk)
+                    print(added_chunk)
+                    
+
+                    #c['pre_line_len'] = [len(line)]
+                    #c['pre_line_num'] = [num_line]
+
+                    if left_to_right[num_line] in added_lines:
+                        c['post_line_len'] = [len(added_lines[left_to_right[num_line]])]
+                        c['post_line_num'] = [left_to_right[num_line]]
+                        c['levenshtein_dist'] = [lev_dist(added_lines[left_to_right[num_line]], line)]
+                        #print('added line\t\t= ', added_lines[left_to_right[num_line]])
+                        #print('levenshtein distance = ', lev_dist(added_lines[left_to_right[num_line]], line))
+                    else:
+                        #print('removed line')
+                        c['post_line_len'] = [0]
+                        c['post_line_num'] = [None]
+                        c['levenshtein_dist'] = [None]
+                    df_t = pd.DataFrame(c)
+                    df = pd.concat([df, df_t])
+        else:
+            for num_line, line in deleted_lines.items():
+                blame_fields = blame[num_line - 1].split(' ')
+                buggy_commit_hash = blame_fields[0].replace('^', '')
+                #buggy_commit = git_repo.get_commit(buggy_commit_hash)
+                #print('Previous commit: \t' + buggy_commit_hash)
+                #print('Author: \t\t' + buggy_commit.author.email)
+                #print('Date: \t\t\t' + buggy_commit.author_date.strftime('%Y-%m-%d %H:%M:%S'))
+                #print('blame\t\t\t= ', blame[num_line-1])
+
+                c = {}
+                c['pre_commit'] = [buggy_commit_hash]
+                c['post_commit'] = [commit.hash]            
+                c['pre_line_len'] = [len(line)]
+                c['pre_line_num'] = [num_line]
+                c['mod_filename'] = [mod.filename]
+                c['mod_cyclomatic_complexity'] = [mod.complexity]
+                c['mod_loc'] = [mod.nloc]
+                c['mod_old_path'] = [mod.old_path]
+                c['mod_new_path'] = [path]
+                c['mod_token_count'] = [mod.token_count]
+                c['mod_removed'] = [mod.removed]
+                c['mod_added'] = [mod.added]
+                
+                #right_to_left = { v:k for k,v in left_to_right.items() if v != False }
+
+                #print('deleted line num\t= ', num_line)
+                #print('deleted line\t\t= ', line)
+                
+                #print('added line num\t\t= ', left_to_right[num_line])
+                if left_to_right[num_line] in added_lines:
+                    c['post_line_len'] = [len(added_lines[left_to_right[num_line]])]
+                    c['post_line_num'] = [left_to_right[num_line]]
+                    c['levenshtein_dist'] = [lev_dist(added_lines[left_to_right[num_line]], line)]
+                    #print('added line\t\t= ', added_lines[left_to_right[num_line]])
+                    #print('levenshtein distance = ', lev_dist(added_lines[left_to_right[num_line]], line))
+                else:
+                    #print('removed line')
+                    c['post_line_len'] = [0]
+                    c['post_line_num'] = [None]
+                    c['levenshtein_dist'] = [None]
+                df_t = pd.DataFrame(c)
+                df = pd.concat([df, df_t])
 
     except GitCommandError:
         logger.debug("Could not found file %s in commit %s. Probably a double rename!", mod.filename,
@@ -191,7 +248,7 @@ def extract_coedits(git_repo, commit, mod):
     return df
 
 
-def process_commit(git_repo, commit, exclude_paths = set()):
+def process_commit(git_repo, commit, exclude_paths = set(), use_blocks = False):
     df_commit = pd.DataFrame()
     df_coedits = pd.DataFrame()
     #print(commit.hash)
@@ -230,7 +287,7 @@ def process_commit(git_repo, commit, exclude_paths = set()):
                     exclude_file = True
                     excluded_path = modification.old_path
         if not exclude_file:
-            df = extract_coedits(git_repo, commit, modification)
+            df = extract_coedits(git_repo, commit, modification, use_blocks=use_blocks)
             df_coedits = pd.concat([df_coedits, df])
         #else:
         #    print('skipping file {0} in commit {1}'.format(excluded_path, commit.hash))
@@ -238,7 +295,7 @@ def process_commit(git_repo, commit, exclude_paths = set()):
 
 
 
-def process_repo_serial(repo_string, exclude=None):
+def process_repo_serial(repo_string, exclude=None, use_blocks=False):
     
     git_repo = pydriller.GitRepository(repo_string)
     exclude_paths = []
@@ -253,7 +310,7 @@ def process_repo_serial(repo_string, exclude=None):
     commits = [c for c in git_repo.get_list_commits()]
     with progressbar.ProgressBar(max_value=len(commits)) as bar:
         for commit in commits:
-            df_1, df_2 = process_commit(git_repo, commit, exclude_paths)
+            df_1, df_2 = process_commit(git_repo, commit, exclude_paths, use_blocks=use_blocks)
             df_commits = pd.concat([df_commits, df_1])
             df_coedits = pd.concat([df_coedits, df_2])
             i += 1
@@ -264,7 +321,7 @@ semaphore = Semaphore(1)
 
 
 def process_commit_parallel(arg):
-    repo_string, commit_hash, sqlite_db_file, exclude = arg
+    repo_string, commit_hash, sqlite_db_file, exclude, use_blocks = arg
     git_repo = pydriller.GitRepository(repo_string)
 
     exclude_paths = []
@@ -272,7 +329,7 @@ def process_commit_parallel(arg):
         with open(exclude) as f:
             exclude_paths = [x.strip() for x in f.readlines()]
 
-    df_1, df_2 = process_commit(git_repo, git_repo.get_commit(commit_hash), exclude_paths)    
+    df_1, df_2 = process_commit(git_repo, git_repo.get_commit(commit_hash), exclude_paths, use_blocks=use_blocks)    
     
     with semaphore:
         con = sqlite3.connect(sqlite_db_file)
@@ -310,17 +367,9 @@ args = parser.parse_args()
 if args.parallel:
     process_repo_parallel(repo_string=args.repo, sqlite_db_file=args.outfile, num_processes=args.numprocesses, exclude=args.exclude, chunksize=args.chunksize)
 else:
-    df_commits, df_coedits = process_repo_serial(args.repo, args.exclude)
+    df_commits, df_coedits = process_repo_serial(args.repo, args.exclude, use_blocks=args.use_blocks)
     con = sqlite3.connect(args.outfile)
     if not df_commits.empty:
         df_commits.to_sql('commits', con, if_exists='append')
     if not df_coedits.empty:
         df_coedits.to_sql('coedits', con, if_exists='append')
-
-
-
-#git_repo = pydriller.GitRepository('.')
-
-#d4b61a32104ca72d1f850077e5bfcfa479b43106
-
-#left_to_right, chunks = pre_to_post(deleted_lines, added_lines)

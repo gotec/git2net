@@ -16,8 +16,6 @@ import pydriller as pydriller
 from pydriller.git_repository import GitCommandError
 from Levenshtein import distance as lev_dist
 
-from functools import lru_cache
-
 logger = logging.getLogger(__name__)
 
 
@@ -68,20 +66,20 @@ def pre_to_post(deleted_lines, added_lines):
     #    added_lines[x[0]] = x[1]
     #    max_added = max(x[0], max_added)
     
-    # either deleted or added lines must contain items otherwise there would be no modification to process
+    # either deleted or added lines must contain items otherwise there would not be a modification to process
     if len(deleted_lines.keys()) > 0:
         max_deleted = max(deleted_lines.keys())
         min_deleted = min(deleted_lines.keys())
     else:
-        max_deleted = np.nan
-        min_deleted = np.nan
+        max_deleted = -1
+        min_deleted = np.inf
 
     if len(added_lines.keys()) > 0:
         max_added = max(added_lines.keys())
         min_added = min(added_lines.keys())
     else:
-        max_added = np.nan
-        min_added = np.nan
+        max_added = -1
+        min_added = np.inf
 
     # create mapping between pre and post edit line numbers
     left_to_right = {}

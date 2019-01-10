@@ -11,6 +11,7 @@ from multiprocessing import Semaphore
 import pandas as pd
 import progressbar
 import numpy as np
+from scipy.stats import entropy
 
 import pydriller as pydriller
 from pydriller.git_repository import GitCommandError
@@ -130,6 +131,8 @@ def pre_to_post(deleted_lines, added_lines):
 
     return left_to_right, chunks
 
+def get_text_entropy(text):
+    return entropy([text.count(chr(i)) for i in range(256)], base=2)
 
 def extract_coedits(git_repo, commit, mod, use_blocks=False):
     
@@ -185,6 +188,16 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
                     c['post_chunk_starting_line_num'] = [chunk[1]]
                     c['post_chunk_len_in_lines'] = [chunk[2]]
                     c['post_chunk_len_in_chars'] = [len(added_chunk)]
+
+                    if len(deleted_chunk) > 0:
+                        c['pre_chunk_text_entropy'] = [get_text_entropy(deleted_chunk)]
+                    else:
+                        c['pre_chunk_text_entropy'] = [None]
+
+                    if len(added_chunk) > 0:
+                        c['post_chunk_text_entropy'] = [get_text_entropy(added_chunk)]
+                    else:
+                        c['post_chunk_text_entropy'] = [None]                 
 
                     # if no lines were added (only deletion)
                     if chunk[2] == 0:

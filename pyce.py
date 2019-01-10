@@ -10,6 +10,7 @@ from multiprocessing import Semaphore
 
 import pandas as pd
 import progressbar
+import numpy as np
 
 import pydriller as pydriller
 from pydriller.git_repository import GitCommandError
@@ -44,7 +45,7 @@ def chunk_size(lines, k):
             chunk = False
     return chunksize
 
-def pre_to_post(git_repo, mod):
+def pre_to_post(deleted_lines, added_lines):
     """
     Maps line numbers between the pre- and post-commit version
     of a modification.
@@ -53,24 +54,40 @@ def pre_to_post(git_repo, mod):
     #print('File: ' + mod.filename)
     #print('=======================')
 
-    diff = git_repo.parse_diff(mod.diff)
+    #diff = git_repo.parse_diff(mod.diff)
     #print('diff = ' + mod.diff)
     
-    deleted_lines = { }
-    added_lines = { }
-    max_deleted = 0
-    max_added = 0
-    for x in diff['deleted']:
-        deleted_lines[x[0]] = x[1]
-        max_deleted = max(x[0], max_deleted)
-    for x in diff['added']:
-        added_lines[x[0]] = x[1]
-        max_added = max(x[0], max_added)
+    #deleted_lines = { }
+    #added_lines = { }
+    #max_deleted = 0
+    #max_added = 0
+    #for x in diff['deleted']:
+    #    deleted_lines[x[0]] = x[1]
+    #    max_deleted = max(x[0], max_deleted)
+    #for x in diff['added']:
+    #    added_lines[x[0]] = x[1]
+    #    max_added = max(x[0], max_added)
+    
+    # either deleted or added lines must contain items otherwise there would be no modification to process
+    if len(deleted_lines.keys()) > 0:
+        max_deleted = max(deleted_lines.keys())
+        min_deleted = min(deleted_lines.keys())
+    else:
+        max_deleted = np.nan
+        min_deleted = np.nan
+
+    if len(added_lines.keys()) > 0:
+        max_added = max(added_lines.keys())
+        min_added = min(added_lines.keys())
+    else:
+        max_added = np.nan
+        min_added = np.nan
 
     # create mapping between pre and post edit line numbers
     left_to_right = {}
-    right = 1
-    left = 1
+    chunks = {} # keys are deleted line numbers, values are tuples containing (number of deleted lines, right line number, number of added lines)
+    right = min(min_added, min_deleted)
+    left = min(min_added, min_deleted)
 
     no_right_inc = 0
     both_inc = 0
@@ -81,6 +98,8 @@ def pre_to_post(git_repo, mod):
         # compute size of added and deleted chunks
         chunk_added = chunk_size(added_lines, right)
         chunk_deleted = chunk_size(deleted_lines, left)
+
+        chunks[left] = (chunk_deleted, right, chunk_added)
 
         # deleted chunk is larger than added chunk
         if chunk_deleted > chunk_added:
@@ -109,7 +128,7 @@ def pre_to_post(git_repo, mod):
             right += 1
             jump_right = 0
 
-    return left_to_right
+    return left_to_right, chunks
 
 
 def extract_coedits(git_repo, commit, mod):
@@ -119,6 +138,8 @@ def extract_coedits(git_repo, commit, mod):
     path = mod.new_path
     deleted_lines = { x[0]:x[1] for x in git_repo.parse_diff(mod.diff)['deleted'] }
     added_lines = { x[0]:x[1] for x in git_repo.parse_diff(mod.diff)['added'] }
+
+    left_to_right, chunks = pre_to_post(deleted_lines, added_lines)
 
     try:
         blame = git_repo.git.blame(commit.hash + '^', '--', path).split('\n')
@@ -145,9 +166,7 @@ def extract_coedits(git_repo, commit, mod):
             c['mod_removed'] = [mod.removed]
             c['mod_added'] = [mod.added]
             
-
-            left_to_right = pre_to_post(git_repo, mod)
-            right_to_left = { v:k for k,v in left_to_right.items() if v != False }
+            #right_to_left = { v:k for k,v in left_to_right.items() if v != False }
 
             #print('deleted line num\t= ', num_line)
             #print('deleted line\t\t= ', line)
@@ -280,12 +299,14 @@ def process_repo_parallel(repo_string, sqlite_db_file, num_processes=os.cpu_coun
 parser = argparse.ArgumentParser(description='Extracts commit and co-editing data from git repositories.')
 parser.add_argument('repo', help='path to repository to be parsed.', type=str)
 parser.add_argument('outfile', help='path to SQLite DB file storing results.', type=str)
-parser.add_argument('--parallel', help='use multi-core processing. Default.', dest='parallel', action='store_true')
+#parser.add_argument('--parallel', help='use multi-core processing. Default.', dest='parallel', action='store_true')
 parser.add_argument('--exclude', help='exclude path prefixes in given file', type=str, default=None)
 parser.add_argument('--no-parallel', help='do not use multi-core processing.', dest='parallel', action='store_false')
 parser.add_argument('--numprocesses', help='number of CPU cores to use for multi-core processing. Defaults to number of CPU cores.', default=os.cpu_count(), type=int)
 parser.add_argument('--chunksize', help='chunk size to be used in multiprocessing.map.', default=1, type=int)
+parser.add_argument('--use-blocks', help='compare added and deleted blocks of code rather than lines', dest='use_blocks', action='store_true')
 parser.set_defaults(parallel=True)
+parser.set_defaults(use_blocks=False)
 
 args = parser.parse_args()
 if args.parallel:
@@ -297,3 +318,11 @@ else:
         df_commits.to_sql('commits', con, if_exists='append')
     if not df_coedits.empty:
         df_coedits.to_sql('coedits', con, if_exists='append')
+
+
+
+#git_repo = pydriller.GitRepository('.')
+
+#d4b61a32104ca72d1f850077e5bfcfa479b43106
+
+#left_to_right, chunks = pre_to_post(deleted_lines, added_lines)

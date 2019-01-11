@@ -24,7 +24,7 @@ def hash_path(s, path_map):
 def anonymize(infile, outfile, map_db):
     con_in = sqlite3.connect(infile)
     con_out = sqlite3.connect(outfile)
-    df = pd.read_sql('SELECT * FROM coedits LIMIT 100', con_in)
+    df = pd.read_sql('SELECT * FROM coedits', con_in)
 
     paths = set(df['mod_filename'])
     for x in df['mod_old_path']:

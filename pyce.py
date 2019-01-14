@@ -49,23 +49,6 @@ def pre_to_post(deleted_lines, added_lines):
     Maps line numbers between the pre- and post-commit version
     of a modification.
     """
-    #print('=======================')
-    #print('File: ' + mod.filename)
-    #print('=======================')
-
-    #diff = git_repo.parse_diff(mod.diff)
-    #print('diff = ' + mod.diff)
-    
-    #deleted_lines = { }
-    #added_lines = { }
-    #max_deleted = 0
-    #max_added = 0
-    #for x in diff['deleted']:
-    #    deleted_lines[x[0]] = x[1]
-    #    max_deleted = max(x[0], max_deleted)
-    #for x in diff['added']:
-    #    added_lines[x[0]] = x[1]
-    #    max_added = max(x[0], max_added)
     
     # either deleted or added lines must contain items otherwise there would not be a modification to process
     if len(deleted_lines.keys()) > 0:
@@ -211,11 +194,6 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
             for num_line, line in deleted_lines.items():
                 blame_fields = blame[num_line - 1].split(' ')
                 buggy_commit_hash = blame_fields[0].replace('^', '')
-                #buggy_commit = git_repo.get_commit(buggy_commit_hash)
-                #print('Previous commit: \t' + buggy_commit_hash)
-                #print('Author: \t\t' + buggy_commit.author.email)
-                #print('Date: \t\t\t' + buggy_commit.author_date.strftime('%Y-%m-%d %H:%M:%S'))
-                #print('blame\t\t\t= ', blame[num_line-1])
 
                 c = {}
                 c['pre_commit'] = [buggy_commit_hash]
@@ -231,20 +209,11 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
                 c['mod_removed'] = [mod.removed]
                 c['mod_added'] = [mod.added]
                 
-                #right_to_left = { v:k for k,v in left_to_right.items() if v != False }
-
-                #print('deleted line num\t= ', num_line)
-                #print('deleted line\t\t= ', line)
-                
-                #print('added line num\t\t= ', left_to_right[num_line])
                 if left_to_right[num_line] in added_lines:
                     c['post_line_len'] = [len(added_lines[left_to_right[num_line]])]
                     c['post_line_num'] = [left_to_right[num_line]]
                     c['levenshtein_dist'] = [lev_dist(added_lines[left_to_right[num_line]], line)]
-                    #print('added line\t\t= ', added_lines[left_to_right[num_line]])
-                    #print('levenshtein distance = ', lev_dist(added_lines[left_to_right[num_line]], line))
                 else:
-                    #print('removed line')
                     c['post_line_len'] = [0]
                     c['post_line_num'] = [None]
                     c['levenshtein_dist'] = [None]
@@ -261,7 +230,6 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
 def process_commit(git_repo, commit, exclude_paths = set(), use_blocks = False):
     df_commit = pd.DataFrame()
     df_coedits = pd.DataFrame()
-    #print(commit.hash)
 
     # parse commit
     c = {}
@@ -299,8 +267,6 @@ def process_commit(git_repo, commit, exclude_paths = set(), use_blocks = False):
         if not exclude_file:
             df = extract_coedits(git_repo, commit, modification, use_blocks=use_blocks)
             df_coedits = pd.concat([df_coedits, df])
-        #else:
-        #    print('skipping file {0} in commit {1}'.format(excluded_path, commit.hash))
     return df_commit, df_coedits
 
 
@@ -364,7 +330,6 @@ def process_repo_parallel(repo_string, sqlite_db_file, num_processes=os.cpu_coun
 parser = argparse.ArgumentParser(description='Extracts commit and co-editing data from git repositories.')
 parser.add_argument('repo', help='path to repository to be parsed.', type=str)
 parser.add_argument('outfile', help='path to SQLite DB file storing results.', type=str)
-#parser.add_argument('--parallel', help='use multi-core processing. Default.', dest='parallel', action='store_true')
 parser.add_argument('--exclude', help='exclude path prefixes in given file', type=str, default=None)
 parser.add_argument('--no-parallel', help='do not use multi-core processing.', dest='parallel', action='store_false')
 parser.add_argument('--numprocesses', help='number of CPU cores to use for multi-core processing. Defaults to number of CPU cores.', default=os.cpu_count(), type=int)

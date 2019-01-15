@@ -126,8 +126,10 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
     diff = mod.diff
     diff = diff.replace('\ No newline at end of file\n', '')
 
-    deleted_lines = { x[0]:x[1] for x in git_repo.parse_diff(diff)['deleted'] }
-    added_lines = { x[0]:x[1] for x in git_repo.parse_diff(diff)['added'] }
+    parsed_lines = git_repo.parse_diff(diff)
+
+    deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
+    added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
     left_to_right, chunks = pre_to_post(deleted_lines, added_lines)
 
@@ -315,6 +317,7 @@ def process_commit_parallel(arg):
             df_2.to_sql('coedits', con, if_exists='append')
     return True
 
+
 def process_repo_parallel(repo_string, sqlite_db_file, num_processes=os.cpu_count(), exclude=None, chunksize=1, use_blocks=False):
     
     print('Using {0} workers.'.format(num_processes))    
@@ -327,24 +330,87 @@ def process_repo_parallel(repo_string, sqlite_db_file, num_processes=os.cpu_coun
             bar.update(i)
 
 
-parser = argparse.ArgumentParser(description='Extracts commit and co-editing data from git repositories.')
-parser.add_argument('repo', help='path to repository to be parsed.', type=str)
-parser.add_argument('outfile', help='path to SQLite DB file storing results.', type=str)
-parser.add_argument('--exclude', help='exclude path prefixes in given file', type=str, default=None)
-parser.add_argument('--no-parallel', help='do not use multi-core processing.', dest='parallel', action='store_false')
-parser.add_argument('--numprocesses', help='number of CPU cores to use for multi-core processing. Defaults to number of CPU cores.', default=os.cpu_count(), type=int)
-parser.add_argument('--chunksize', help='chunk size to be used in multiprocessing.map.', default=1, type=int)
-parser.add_argument('--use-blocks', help='compare added and deleted blocks of code rather than lines', dest='use_blocks', action='store_true')
-parser.set_defaults(parallel=True)
-parser.set_defaults(use_blocks=False)
+def get_unified_changes(repo_string, commit_hash, filename):
+    """
+    Returns dataframe with github-like unified diff representation of the content of a file before and after a commit for a given git repository, commit hash and filename.
+    """
+    git_repo = pydriller.GitRepository(repo_string)
+    commit = git_repo.get_commit(commit_hash)
+    for modification in commit.modifications:
+        if modification.filename == filename:
+            parsed_lines = git_repo.parse_diff(modification.diff)
 
-args = parser.parse_args()
-if args.parallel:
-    process_repo_parallel(repo_string=args.repo, sqlite_db_file=args.outfile, num_processes=args.numprocesses, exclude=args.exclude, chunksize=args.chunksize, use_blocks=args.use_blocks)
-else:
-    df_commits, df_coedits = process_repo_serial(args.repo, args.exclude, use_blocks=args.use_blocks)
-    con = sqlite3.connect(args.outfile)
-    if not df_commits.empty:
-        df_commits.to_sql('commits', con, if_exists='append')
-    if not df_coedits.empty:
-        df_coedits.to_sql('coedits', con, if_exists='append')
+            deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
+            added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
+
+            left_to_right, chunks = pre_to_post(deleted_lines, added_lines)
+
+            post_source_code = modification.source_code.split('\n')
+
+            max_line_no = max(max(deleted_lines.keys()), max(added_lines.keys()), len(post_source_code))
+
+            pre = []
+            post = []
+            action = []
+            code = []
+
+            left = 1
+            right = 1
+            while max(left, right) < max_line_no:
+                if left in chunks.keys():
+                    cur = left
+                    for i in range(chunks[cur][0]):
+                        pre.append(left)
+                        post.append(None)
+                        action.append('-')
+                        code.append(deleted_lines[left])
+                        left += 1
+                    for i in range(chunks[cur][2]):
+                        pre.append(None)
+                        post.append(right)
+                        action.append('+')
+                        code.append(added_lines[right])
+                        right += 1
+                else:
+                    if left in left_to_right.keys():
+                        # if left is not in the dictionary nothing has changed
+                        if right < left_to_right[left]:
+                            # a block has been added
+                            for i in range(left_to_right[left] - right):
+                                pre.append(None)
+                                post.append(right)
+                                action.append('+')
+                                code.append(added_lines[right])
+                                right += 1
+
+                    pre.append(left)
+                    post.append(right)
+                    action.append(None)
+                    code.append(post_source_code[right - 1]) # minus one as list starts from 0
+                    left += 1
+                    right += 1
+                
+    return pd.DataFrame({'pre': pre, 'post': post, 'action': action, 'code': code})
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Extracts commit and co-editing data from git repositories.')
+    parser.add_argument('repo', help='path to repository to be parsed.', type=str)
+    parser.add_argument('outfile', help='path to SQLite DB file storing results.', type=str)
+    parser.add_argument('--exclude', help='exclude path prefixes in given file', type=str, default=None)
+    parser.add_argument('--no-parallel', help='do not use multi-core processing.', dest='parallel', action='store_false')
+    parser.add_argument('--numprocesses', help='number of CPU cores to use for multi-core processing. Defaults to number of CPU cores.', default=os.cpu_count(), type=int)
+    parser.add_argument('--chunksize', help='chunk size to be used in multiprocessing.map.', default=1, type=int)
+    parser.add_argument('--use-blocks', help='compare added and deleted blocks of code rather than lines', dest='use_blocks', action='store_true')
+    parser.set_defaults(parallel=True)
+    parser.set_defaults(use_blocks=False)
+
+    args = parser.parse_args()
+    if args.parallel:
+        process_repo_parallel(repo_string=args.repo, sqlite_db_file=args.outfile, num_processes=args.numprocesses, exclude=args.exclude, chunksize=args.chunksize, use_blocks=args.use_blocks)
+    else:
+        df_commits, df_coedits = process_repo_serial(args.repo, args.exclude, use_blocks=args.use_blocks)
+        con = sqlite3.connect(args.outfile)
+        if not df_commits.empty:
+            df_commits.to_sql('commits', con, if_exists='append')
+        if not df_coedits.empty:
+            df_coedits.to_sql('coedits', con, if_exists='append')

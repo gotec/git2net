@@ -17,6 +17,8 @@ import pydriller as pydriller
 from pydriller.git_repository import GitCommandError
 from Levenshtein import distance as lev_dist
 
+import pathpy as pp
+
 logger = logging.getLogger(__name__)
 
 
@@ -391,6 +393,219 @@ def get_unified_changes(repo_string, commit_hash, filename):
                     right += 1
                 
     return pd.DataFrame({'pre': pre, 'post': post, 'action': action, 'code': code})
+
+
+def _get_tedges(db_location):
+    con = sqlite3.connect(db_location)
+
+    tedges = pd.read_sql("""SELECT x.author_pre as source,
+                                   substr(x.pre_commit, 1, 8) as pre_commit,
+                                   c_post.author_email AS target,
+                                   substr(x.post_commit, 1, 8) AS post_commit,
+                                   c_post.committer_date as time,
+                                   x.levenshtein_dist as levenshtein_dist
+                            FROM (
+                                   SELECT c_pre.author_email AS author_pre,
+                                          coedits.pre_commit,
+                                          coedits.post_commit,
+                                          coedits.levenshtein_dist
+                                   FROM coedits
+                                   JOIN commits AS c_pre ON substr(c_pre.hash, 1, 8) == coedits.pre_commit) AS x
+                                   JOIN commits AS c_post ON substr(c_post.hash, 1, 8) == substr(x.post_commit, 1, 8
+                                 )
+                            WHERE source != target""", con)
+
+    tedges.loc[:,'time'] = pd.to_datetime(tedges.time)
+
+    return tedges
+
+
+def get_coediting_network(db_location, time_from=None, time_to=None):
+    tedges = _get_tedges(db_location)
+
+    if time_from == None:
+        time_from = min(tedges.time)
+    if time_to == None:
+        time_to = max(tedges.time)
+
+    t = pp.TemporalNetwork()
+    for idx, edge in tedges.iterrows():
+        if (edge.time >= time_from) and (edge.time <= time_to):
+            t.add_edge(edge.source,
+                       edge.target,
+                       edge.time.strftime('%Y-%m-%d %H:%M:%S'),
+                       directed=True,
+                       timestamp_format='%Y-%m-%d %H:%M:%S')
+    return t
+
+def _get_bipartite_edges(db_location):
+    con = sqlite3.connect(db_location)
+
+    bipartite_edges = pd.read_sql("""SELECT DISTINCT mod_filename AS target,
+                                            commits.author_name AS source,
+                                            commits.committer_date AS time
+                                     FROM coedits
+                                     JOIN commits ON coedits.post_commit == commits.hash""", con)
+
+    bipartite_edges.loc[:,'time'] = pd.to_datetime(bipartite_edges.time)
+
+    return bipartite_edges
+
+
+def get_bipartite_network(db_location, time_from=None, time_to=None):
+    bipartite_edges = _get_bipartite_edges(db_location)
+
+    if time_from == None:
+        time_from = min(bipartite_edges.time)
+    if time_to == None:
+        time_to = max(bipartite_edges.time)
+
+    n = pp.Network()
+    for idx, edge in bipartite_edges.iterrows():
+        if (edge.time >= time_from) and (edge.time <= time_to):
+            n.add_edge(edge.source, edge.target)
+    return n
+    
+
+def _get_dag_edges(db_location):
+    con = sqlite3.connect(db_location)
+    
+    dag_edges = pd.read_sql("""SELECT DISTINCT x.author_pre||","||substr(x.pre_commit, 1, 8) as source,
+                                      c_post.author_email||","|| substr(x.post_commit, 1, 8) AS target,
+                                      c_post.committer_date AS time
+                               FROM (
+                                      SELECT c_pre.author_email AS author_pre,
+                                             coedits.pre_commit,
+                                             coedits.post_commit,
+                                             coedits.levenshtein_dist
+                                      FROM coedits
+                                      JOIN commits AS c_pre ON substr(c_pre.hash, 1, 8) == coedits.pre_commit
+                                    ) AS x
+                                JOIN (
+                                       SELECT *
+                                       FROM commits
+                                     ) AS c_post
+                                ON substr(c_post.hash, 1, 8) == substr(x.post_commit, 1, 8)
+                                WHERE x.author_pre != c_post.author_email""", con)
+
+    dag_edges.loc[:,'time'] = pd.to_datetime(dag_edges.time)
+
+    return dag_edges
+
+
+def get_dag(db_location, time_from=None, time_to=None):
+    dag_edges = _get_dag_edges(db_location)
+
+    if time_from == None:
+        time_from = min(dag_edges.time)
+    if time_to == None:
+        time_to = max(dag_edges.time)
+
+    dag = pp.DAG()
+    for idx, edge in dag_edges.iterrows():
+        if (edge.time >= time_from) and (edge.time <= time_to):
+            dag.add_edge(edge.source, edge.target)
+
+    dag.topsort()
+
+    return dag
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def mine_git_repo(repo_string, sqlite_db_file, exclude=[], no_parallel=False, num_processes=os.cpu_count(), chunk_size=1, use_blocks=True):
+
+    if no_parallel == False:
+        process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file, num_processes=num_processes, exclude=exclude, chunksize=chunk_size, use_blocks=use_blocks)
+    else:
+        df_commits, df_coedits = process_repo_serial(repo_string, exclude, use_blocks=use_blocks)
+        con = sqlite3.connect(sqlite_db_file)
+        if not df_commits.empty:
+            df_commits.to_sql('commits', con, if_exists='append')
+        if not df_coedits.empty:
+            df_coedits.to_sql('coedits', con, if_exists='append')
+
+
+
+
+
+
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Extracts commit and co-editing data from git repositories.')

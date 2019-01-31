@@ -47,7 +47,7 @@ def get_block_size(lines, k):
             block = False
     return block_size
 
-def pre_to_post(deleted_lines, added_lines):
+def identify_edits(deleted_lines, added_lines):
     """
     Maps line numbers between the pre- and post-commit version of a modification.
     """
@@ -69,7 +69,7 @@ def pre_to_post(deleted_lines, added_lines):
         min_added = np.inf
 
     # create mapping between pre and post edit line numbers
-    left_to_right = {}
+    pre_to_post = {}
     # create block dictionary
     # keys are deleted line numbers
     # values are tuples containing
@@ -107,23 +107,23 @@ def pre_to_post(deleted_lines, added_lines):
         # increment left and right counter
         if both_inc>0:
             both_inc -= 1
-            left_to_right[left] = right
+            pre_to_post[left] = right
             left +=1
             right += 1
         elif no_right_inc>0:
                 no_right_inc -= 1
-                left_to_right[left] = False
+                pre_to_post[left] = False
                 left += 1
         else:
             right += jump_right
-            left_to_right[left] = right
+            pre_to_post[left] = right
             left +=1
             right += 1
             jump_right = 0
 
-    return left_to_right, blocks
+    return pre_to_post, blocks
 
-def get_text_entropy(text):
+def text_entropy(text):
     return entropy([text.count(chr(i)) for i in range(256)], base=2)
 
 def extract_coedits(git_repo, commit, mod, use_blocks=False):
@@ -137,7 +137,7 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
     deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
     added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
-    left_to_right, blocks = pre_to_post(deleted_lines, added_lines)
+    pre_to_post, blocks = identify_edits(deleted_lines, added_lines)
 
     try:
         blame = git_repo.git.blame(commit.hash + '^', '--', path).split('\n')
@@ -161,8 +161,6 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
                     c['mod_loc'] = mod.nloc
                     c['mod_token_count'] = mod.token_count
 
-
-
                     deleted_block = []
                     for i in range(num_line, num_line + block[0]):
                         deleted_block.append(deleted_lines[i])
@@ -171,8 +169,8 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
                     for i in range(block[1], block[1] + block[2]):
                         added_block.append(added_lines[i])
 
-                    deleted_block = ''.join(deleted_block)
-                    added_block = ''.join(added_block)
+                    deleted_block = ' '.join(deleted_block)
+                    added_block = ' '.join(added_block)
 
                     c['pre_block_starting_line_num'] = num_line
                     c['pre_block_len_in_lines'] = block[0]
@@ -183,14 +181,14 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
                     c['post_block_len_in_chars'] = len(added_block)
 
                     if len(deleted_block) > 0:
-                        c['pre_block_text_entropy'] = get_text_entropy(deleted_block)
+                        c['pre_block_entropy'] = text_entropy(deleted_block)
                     else:
-                        c['pre_block_text_entropy'] = None
+                        c['pre_block_entropy'] = None
 
                     if len(added_block) > 0:
-                        c['post_block_text_entropy'] = get_text_entropy(added_block)
+                        c['post_block_entropy'] = text_entropy(added_block)
                     else:
-                        c['post_block_text_entropy'] = None
+                        c['post_block_entropy'] = None
 
                     # if no lines were added (only deletion)
                     if block[2] == 0:
@@ -206,23 +204,34 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
                 buggy_commit_hash = blame_fields[0].replace('^', '')
 
                 c = {}
+                c['mod_filename'] = mod.filename
+                c['mod_new_path'] = path
+                c['mod_old_path'] = mod.old_path
                 c['pre_commit'] = buggy_commit_hash
                 c['post_commit'] = commit.hash
-                c['pre_line_len'] = len(line)
                 c['pre_line_num'] = num_line
-                c['mod_filename'] = mod.filename
+                c['pre_line_len'] = len(line)
+                c['mod_added'] = mod.added
+                c['mod_removed'] = mod.removed
                 c['mod_cyclomatic_complexity'] = mod.complexity
                 c['mod_loc'] = mod.nloc
-                c['mod_old_path'] = mod.old_path
-                c['mod_new_path'] = path
                 c['mod_token_count'] = mod.token_count
-                c['mod_removed'] = mod.removed
-                c['mod_added'] = mod.added
 
-                if left_to_right[num_line] in added_lines:
-                    c['post_line_len'] = len(added_lines[left_to_right[num_line]])
-                    c['post_line_num'] = left_to_right[num_line]
-                    c['levenshtein_dist'] = lev_dist(added_lines[left_to_right[num_line]], line)
+                if len(line) > 0:
+                    c['pre_line_entropy'] = text_entropy(line)
+                else:
+                    c['pre_line_entropy'] = None
+
+                if pre_to_post[num_line] in added_lines:
+                    c['post_line_num'] = pre_to_post[num_line]
+                    c['post_line_len'] = len(added_lines[pre_to_post[num_line]])
+
+                    if len(added_lines[pre_to_post[num_line]]) > 0:
+                        c['post_line_entropy'] = text_entropy(added_lines[pre_to_post[num_line]])
+                    else:
+                        c['post_line_entropy'] = None
+
+                    c['levenshtein_dist'] = lev_dist(added_lines[pre_to_post[num_line]], line)
                 else:
                     c['post_line_len'] = 0
                     c['post_line_num'] = None
@@ -350,7 +359,7 @@ def get_unified_changes(repo_string, commit_hash, filename):
             deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
             added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
-            left_to_right, blocks = pre_to_post(deleted_lines, added_lines)
+            pre_to_post, blocks = identify_edits(deleted_lines, added_lines)
 
             post_source_code = modification.source_code.split('\n')
 
@@ -381,11 +390,11 @@ def get_unified_changes(repo_string, commit_hash, filename):
                         code.append(added_lines[right])
                         right += 1
                 else:
-                    if left in left_to_right.keys():
+                    if left in pre_to_post.keys():
                         # if left is not in the dictionary nothing has changed
-                        if right < left_to_right[left]:
+                        if right < pre_to_post[left]:
                             # a block has been added
-                            for i in range(left_to_right[left] - right):
+                            for i in range(pre_to_post[left] - right):
                                 pre.append(None)
                                 post.append(right)
                                 action.append('+')

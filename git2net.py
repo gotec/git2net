@@ -23,9 +23,9 @@ import pathpy as pp
 
 logger = logging.getLogger(__name__)
 
-def get_block_size(lines, k):
+def get_block_length(lines, k):
     """
-    Calculates the length (in number of lines) of a block of added/deleted lines starting in a given
+    Calculates the length (in number of lines) of a edit of added/deleted lines starting in a given
     line k.
 
     Parameters
@@ -34,20 +34,20 @@ def get_block_size(lines, k):
     @param k: line number to check for
     """
     if k not in lines or (k > 1 and k - 1 in lines):
-        block = False
+        edit = False
         block_size = 0
     else:
-        block = True
+        edit = True
         block_size = 1
 
-    while block:
+    while edit:
         if k + block_size in lines:
             block_size += 1
         else:
-            block = False
+            edit = False
     return block_size
 
-def identify_edits(deleted_lines, added_lines):
+def identify_edits(deleted_lines, added_lines, use_blocks=False):
     """
     Maps line numbers between the pre- and post-commit version of a modification.
     """
@@ -70,63 +70,82 @@ def identify_edits(deleted_lines, added_lines):
 
     # create mapping between pre and post edit line numbers
     pre_to_post = {}
-    # create block dictionary
-    # keys are deleted line numbers
-    # values are tuples containing
-    #  * number of deleted lines
-    #  * right line number
-    #  * number of added lines
-    blocks = {}
-    right = min(min_added, min_deleted)
-    left = min(min_added, min_deleted)
 
-    no_right_inc = 0
+    # create DataFrame holding information on edit
+    edits = pd.DataFrame()
+
+    # line numbers of lines before the first addition or deletion do not change
+    pre = min(min_added, min_deleted)
+    post = min(min_added, min_deleted)
+
+    # counters used to match pre and post line number
+    no_post_inc = 0
     both_inc = 0
-    jump_right = 0
+    no_pre_inc = 0
 
-    while left <= max(max_added, max_deleted):
+    # line numbers after the last addition or deletion do not matter for edits
+    while (pre <= max_deleted) or (post <= max_added):
+        if use_blocks:
+            # compute size of added and deleted edits
+            # size is reported as 0 if the line is not in added or deleted lines, respectively
+            length_added_block = get_block_length(added_lines, post)
+            length_deleted_block = get_block_length(deleted_lines, pre)
 
-        # compute size of added and deleted blocks
-        added_block = get_block_size(added_lines, right)
-        deleted_block = get_block_size(deleted_lines, left)
+            # check if a edit has been made
+            if (length_deleted_block > 0) or (length_added_block > 0):
+                edits = edits.append({'pre start': pre,
+                                      'number of deleted lines': length_deleted_block,
+                                      'post start': post,
+                                      'number of added lines': length_added_block},
+                                     ignore_index=True)
 
-        # we ignore pure additions
-        if deleted_block > 0:
-            blocks[left] = (deleted_block, right, added_block)
+            # deleted edit is larger than added edit
+            if length_deleted_block > length_added_block:
+                no_post_inc = length_deleted_block - length_added_block
+                both_inc = length_added_block
 
-        # deleted block is larger than added block
-        if deleted_block > added_block:
-            no_right_inc = deleted_block - added_block
-            both_inc = added_block
+            # added edit is larger than deleted edit
+            elif length_added_block > length_deleted_block:
+                no_pre_inc = length_added_block - length_deleted_block
+                both_inc = length_deleted_block
+        else: # no blocks are considered
+            pre_in_deleted = pre in deleted_lines
+            post_in_added = post in added_lines
+            if pre_in_deleted or post_in_added:
+                edits = edits.append({'pre start': pre,
+                                      'number of deleted lines': int(pre_in_deleted),
+                                      'post start': post,
+                                      'number of added lines': int(post_in_added)},
+                                     ignore_index=True)
+            if pre_in_deleted and not post_in_added:
+                no_post_inc += 1
+            if post_in_added and not pre_in_deleted:
+                no_pre_inc += 1
 
-        # added block is larger than deleted block
-        elif added_block > deleted_block:
-            jump_right = added_block - deleted_block
-            both_inc = deleted_block
-
-        # increment left and right counter
-        if both_inc>0:
+        # increment pre and post counter
+        if both_inc > 0:
             both_inc -= 1
-            pre_to_post[left] = right
-            left +=1
-            right += 1
-        elif no_right_inc>0:
-                no_right_inc -= 1
-                pre_to_post[left] = False
-                left += 1
+            pre_to_post[pre] = post
+            pre += 1
+            post += 1
+        elif no_post_inc > 0:
+            no_post_inc -= 1
+            pre_to_post[pre] = False
+            pre += 1
+        elif no_pre_inc > 0:
+            no_pre_inc -= 1
+            post += 1
         else:
-            right += jump_right
-            pre_to_post[left] = right
-            left +=1
-            right += 1
-            jump_right = 0
+            pre_to_post[pre] = post
+            pre += 1
+            post += 1
 
-    return pre_to_post, blocks
+    return pre_to_post, edits.astype(int)
 
 def text_entropy(text):
     return entropy([text.count(chr(i)) for i in range(256)], base=2)
 
-def extract_coedits(git_repo, commit, mod, use_blocks=False):
+def extract_edits(git_repo, commit, mod, use_blocks=False):
 
     df = pd.DataFrame()
 
@@ -137,107 +156,71 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
     deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
     added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
-    pre_to_post, blocks = identify_edits(deleted_lines, added_lines)
+    pre_to_post, edits = identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
+
+    print(edits)
 
     try:
         blame = git_repo.git.blame(commit.hash + '^', '--', path).split('\n')
-        if use_blocks:
-            for num_line, line in deleted_lines.items():
-                if num_line in blocks.keys():
-                    block = blocks[num_line]
+        for _, edit in edits.iterrows():
+            c = {}
+            c['mod_filename'] = mod.filename
+            c['mod_new_path'] = path
+            c['mod_old_path'] = mod.old_path
+            c['post_commit'] = commit.hash
+            c['mod_added'] = mod.added
+            c['mod_removed'] = mod.removed
+            c['mod_cyclomatic_complexity'] = mod.complexity
+            c['mod_loc'] = mod.nloc
+            c['mod_token_count'] = mod.token_count
 
-                    blame_fields = blame[num_line - 1].split(' ')
-                    buggy_commit_hash = blame_fields[0].replace('^', '')
+            deleted_block = []
+            for i in range(edit['pre start'],
+                            edit['pre start'] + edit['number of deleted lines']):
+                deleted_block.append(deleted_lines[i])
 
-                    c = {}
-                    c['mod_filename'] = mod.filename
-                    c['mod_new_path'] = path
-                    c['mod_old_path'] = mod.old_path
-                    c['pre_commit'] = buggy_commit_hash
-                    c['post_commit'] = commit.hash
-                    c['mod_added'] = mod.added
-                    c['mod_removed'] = mod.removed
-                    c['mod_cyclomatic_complexity'] = mod.complexity
-                    c['mod_loc'] = mod.nloc
-                    c['mod_token_count'] = mod.token_count
+            added_block = []
+            for i in range(edit['post start'],
+                            edit['post start'] + edit['number of added lines']):
+                added_block.append(added_lines[i])
 
-                    deleted_block = []
-                    for i in range(num_line, num_line + block[0]):
-                        deleted_block.append(deleted_lines[i])
+            deleted_block = ' '.join(deleted_block)
+            added_block = ' '.join(added_block)
 
-                    added_block = []
-                    for i in range(block[1], block[1] + block[2]):
-                        added_block.append(added_lines[i])
-
-                    deleted_block = ' '.join(deleted_block)
-                    added_block = ' '.join(added_block)
-
-                    c['pre_block_starting_line_num'] = num_line
-                    c['pre_block_len_in_lines'] = block[0]
-                    c['pre_block_len_in_chars'] = len(deleted_block)
-
-                    c['post_block_starting_line_num'] = block[1]
-                    c['post_block_len_in_lines'] = block[2]
-                    c['post_block_len_in_chars'] = len(added_block)
-
-                    if len(deleted_block) > 0:
-                        c['pre_block_entropy'] = text_entropy(deleted_block)
-                    else:
-                        c['pre_block_entropy'] = None
-
-                    if len(added_block) > 0:
-                        c['post_block_entropy'] = text_entropy(added_block)
-                    else:
-                        c['post_block_entropy'] = None
-
-                    # if no lines were added (only deletion)
-                    if block[2] == 0:
-                        c['levenshtein_dist'] = None
-                    else:
-                        c['levenshtein_dist'] = lev_dist(deleted_block, added_block)
-
-
-                    df = df.append(c, ignore_index=True)
-        else:
-            for num_line, line in deleted_lines.items():
-                blame_fields = blame[num_line - 1].split(' ')
-                buggy_commit_hash = blame_fields[0].replace('^', '')
-
-                c = {}
-                c['mod_filename'] = mod.filename
-                c['mod_new_path'] = path
-                c['mod_old_path'] = mod.old_path
-                c['pre_commit'] = buggy_commit_hash
-                c['post_commit'] = commit.hash
-                c['pre_line_num'] = num_line
-                c['pre_line_len'] = len(line)
-                c['mod_added'] = mod.added
-                c['mod_removed'] = mod.removed
-                c['mod_cyclomatic_complexity'] = mod.complexity
-                c['mod_loc'] = mod.nloc
-                c['mod_token_count'] = mod.token_count
-
-                if len(line) > 0:
-                    c['pre_line_entropy'] = text_entropy(line)
+            c['pre_starting_line_num'] = edit['pre start']
+            if edit['number of deleted lines'] == 0:
+                c['pre_len_in_lines'] = None
+                c['pre_len_in_chars'] = None
+                c['pre_entropy'] = None
+                c['pre_commit'] = None
+            else:
+                blame_fields = blame[edit['pre start'] - 1].split(' ')
+                original_commit_hash = blame_fields[0].replace('^', '')
+                c['pre_commit'] = original_commit_hash
+                c['pre_len_in_lines'] = edit['number of deleted lines']
+                c['pre_len_in_chars'] = len(deleted_block)
+                if len(deleted_block) > 0:
+                    c['pre_entropy'] = text_entropy(deleted_block)
                 else:
-                    c['pre_line_entropy'] = None
+                    c['pre_entropy'] = None
 
-                if pre_to_post[num_line] in added_lines:
-                    c['post_line_num'] = pre_to_post[num_line]
-                    c['post_line_len'] = len(added_lines[pre_to_post[num_line]])
+            c['post_starting_line_num'] = edit['post start']
+            if edit['number of added lines'] == 0:
+                c['post_len_in_lines'] = None
+                c['post_len_in_chars'] = None
+                c['post_entropy'] = None
 
-                    if len(added_lines[pre_to_post[num_line]]) > 0:
-                        c['post_line_entropy'] = text_entropy(added_lines[pre_to_post[num_line]])
-                    else:
-                        c['post_line_entropy'] = None
-
-                    c['levenshtein_dist'] = lev_dist(added_lines[pre_to_post[num_line]], line)
+            else:
+                c['post_len_in_lines'] = edit['number of added lines']
+                c['post_len_in_chars'] = len(added_block)
+                if len(added_block) > 0:
+                    c['post_entropy'] = text_entropy(added_block)
+                    c['levenshtein_dist'] = lev_dist(deleted_block, added_block)
                 else:
-                    c['post_line_len'] = 0
-                    c['post_line_num'] = None
+                    c['post_entropy'] = None
                     c['levenshtein_dist'] = None
-                df = df.append(c, ignore_index=True)
 
+            df = df.append(c, ignore_index=True)
     except GitCommandError:
         logger.debug("Could not found file %s in commit %s. Probably a double rename!",
                         mod.filename, commit.hash)
@@ -247,7 +230,7 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
 
 def process_commit(git_repo, commit, exclude_paths = set(), use_blocks = False):
     df_commit = pd.DataFrame()
-    df_coedits = pd.DataFrame()
+    df_edits = pd.DataFrame()
 
     # parse commit
     c = {}
@@ -283,9 +266,9 @@ def process_commit(git_repo, commit, exclude_paths = set(), use_blocks = False):
                     exclude_file = True
                     excluded_path = modification.old_path
         if not exclude_file:
-            df = extract_coedits(git_repo, commit, modification, use_blocks=use_blocks)
-            df_coedits = pd.concat([df_coedits, df])
-    return df_commit, df_coedits
+            df = extract_edits(git_repo, commit, modification, use_blocks=use_blocks)
+            df_edits = pd.concat([df_edits, df])
+    return df_commit, df_edits
 
 
 
@@ -298,18 +281,15 @@ def process_repo_serial(repo_string, exclude=None, use_blocks=False):
             exclude_paths = [x.strip() for x in f.readlines()]
 
     df_commits = pd.DataFrame()
-    df_coedits = pd.DataFrame()
+    df_edits = pd.DataFrame()
 
     i = 0
     commits = [c for c in git_repo.get_list_commits()]
     for commit in tqdm(commits, desc='Serial'):
         df_1, df_2 = process_commit(git_repo, commit, exclude_paths, use_blocks=use_blocks)
         df_commits = pd.concat([df_commits, df_1])
-        df_coedits = pd.concat([df_coedits, df_2])
-    return df_commits, df_coedits
-
-semaphore = Semaphore(1)
-
+        df_edits = pd.concat([df_edits, df_2])
+    return df_commits, df_edits
 
 def process_commit_parallel(arg):
     repo_string, commit_hash, sqlite_db_file, exclude, use_blocks = arg
@@ -323,12 +303,12 @@ def process_commit_parallel(arg):
     df_1, df_2 = process_commit(git_repo, git_repo.get_commit(commit_hash), exclude_paths,
                                 use_blocks=use_blocks)
 
-    with semaphore:
+    with Semaphore(1):
         con = sqlite3.connect(sqlite_db_file)
         if not df_1.empty:
             df_1.to_sql('commits', con, if_exists='append')
         if not df_2.empty:
-            df_2.to_sql('coedits', con, if_exists='append')
+            df_2.to_sql('edits', con, if_exists='append')
     return True
 
 
@@ -342,8 +322,7 @@ def process_repo_parallel(repo_string, sqlite_db_file, num_processes=os.cpu_coun
     p = Pool(num_processes)
     with tqdm(total=len(args), desc='Parallel ({0} workers)'.format(num_processes)) as pbar:
         for i,_ in enumerate(p.imap_unordered(process_commit_parallel, args, chunksize=chunksize)):
-            pbar.update(chunksize)
-
+            pbar.update(1)
 
 def get_unified_changes(repo_string, commit_hash, filename):
     """
@@ -359,7 +338,7 @@ def get_unified_changes(repo_string, commit_hash, filename):
             deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
             added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
-            pre_to_post, blocks = identify_edits(deleted_lines, added_lines)
+            pre_to_post, edits = identify_edits(deleted_lines, added_lines)
 
             post_source_code = modification.source_code.split('\n')
 
@@ -372,41 +351,41 @@ def get_unified_changes(repo_string, commit_hash, filename):
             action = []
             code = []
 
-            left = 1
-            right = 1
-            while max(left, right) < max_line_no:
-                if left in blocks.keys():
-                    cur = left
-                    for i in range(blocks[cur][0]):
-                        pre.append(left)
+            pre = 1
+            post = 1
+            while max(pre, post) < max_line_no:
+                if pre in edits.keys():
+                    cur = pre
+                    for i in range(edits[cur][0]):
+                        pre.append(pre)
                         post.append(None)
                         action.append('-')
-                        code.append(deleted_lines[left])
-                        left += 1
-                    for i in range(blocks[cur][2]):
+                        code.append(deleted_lines[pre])
+                        pre += 1
+                    for i in range(edits[cur][2]):
                         pre.append(None)
-                        post.append(right)
+                        post.append(post)
                         action.append('+')
-                        code.append(added_lines[right])
-                        right += 1
+                        code.append(added_lines[post])
+                        post += 1
                 else:
-                    if left in pre_to_post.keys():
-                        # if left is not in the dictionary nothing has changed
-                        if right < pre_to_post[left]:
-                            # a block has been added
-                            for i in range(pre_to_post[left] - right):
+                    if pre in pre_to_post.keys():
+                        # if pre is not in the dictionary nothing has changed
+                        if post < pre_to_post[pre]:
+                            # a edit has been added
+                            for i in range(pre_to_post[pre] - post):
                                 pre.append(None)
-                                post.append(right)
+                                post.append(post)
                                 action.append('+')
-                                code.append(added_lines[right])
-                                right += 1
+                                code.append(added_lines[post])
+                                post += 1
 
-                    pre.append(left)
-                    post.append(right)
+                    pre.append(pre)
+                    post.append(post)
                     action.append(None)
-                    code.append(post_source_code[right - 1]) # minus one as list starts from 0
-                    left += 1
-                    right += 1
+                    code.append(post_source_code[post - 1]) # minus one as list starts from 0
+                    pre += 1
+                    post += 1
 
     return pd.DataFrame({'pre': pre, 'post': post, 'action': action, 'code': code})
 
@@ -422,12 +401,12 @@ def _get_tedges(db_location):
                                    x.levenshtein_dist as levenshtein_dist
                             FROM (
                                    SELECT c_pre.author_email AS author_pre,
-                                          coedits.pre_commit,
-                                          coedits.post_commit,
-                                          coedits.levenshtein_dist
-                                   FROM coedits
+                                          edits.pre_commit,
+                                          edits.post_commit,
+                                          edits.levenshtein_dist
+                                   FROM edits
                                    JOIN commits AS c_pre
-                                   ON substr(c_pre.hash, 1, 8) == coedits.pre_commit) AS x
+                                   ON substr(c_pre.hash, 1, 8) == edits.pre_commit) AS x
                                    JOIN commits AS c_post
                                    ON substr(c_post.hash, 1, 8) == substr(x.post_commit, 1, 8
                                  )
@@ -462,8 +441,8 @@ def _get_bipartite_edges(db_location):
     bipartite_edges = pd.read_sql("""SELECT DISTINCT mod_filename AS target,
                                             commits.author_name AS source,
                                             commits.committer_date AS time
-                                     FROM coedits
-                                     JOIN commits ON coedits.post_commit == commits.hash""", con)
+                                     FROM edits
+                                     JOIN commits ON edits.post_commit == commits.hash""", con)
 
     bipartite_edges.loc[:,'time'] = pd.to_datetime(bipartite_edges.time)
 
@@ -495,12 +474,12 @@ def _get_dag_edges(db_location):
                                       c_post.committer_date AS time
                                FROM (
                                       SELECT c_pre.author_email AS author_pre,
-                                             coedits.pre_commit,
-                                             coedits.post_commit,
-                                             coedits.levenshtein_dist
-                                      FROM coedits
+                                             edits.pre_commit,
+                                             edits.post_commit,
+                                             edits.levenshtein_dist
+                                      FROM edits
                                       JOIN commits AS c_pre
-                                      ON substr(c_pre.hash, 1, 8) == coedits.pre_commit
+                                      ON substr(c_pre.hash, 1, 8) == edits.pre_commit
                                     ) AS x
                                 JOIN (
                                        SELECT *
@@ -533,19 +512,19 @@ def get_dag(db_location, time_from=None, time_to=None):
 
 
 def mine_git_repo(repo_string, sqlite_db_file, exclude=[], no_parallel=False,
-                  num_processes=os.cpu_count(), get_block_size=1, use_blocks=True):
+                  num_processes=os.cpu_count(), chunksize=1, use_blocks=True):
 
     if no_parallel == False:
         process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
                               num_processes=num_processes, exclude=exclude,
-                              chunksize=get_block_size, use_blocks=use_blocks)
+                              chunksize=chunksize, use_blocks=use_blocks)
     else:
-        df_commits, df_coedits = process_repo_serial(repo_string, exclude, use_blocks=use_blocks)
+        df_commits, df_edits = process_repo_serial(repo_string, exclude, use_blocks=use_blocks)
         con = sqlite3.connect(sqlite_db_file)
         if not df_commits.empty:
             df_commits.to_sql('commits', con, if_exists='append')
-        if not df_coedits.empty:
-            df_coedits.to_sql('coedits', con, if_exists='append')
+        if not df_edits.empty:
+            df_edits.to_sql('edits', con, if_exists='append')
 
 
 if __name__ == "__main__":
@@ -562,8 +541,8 @@ if __name__ == "__main__":
         default=os.cpu_count(), type=int)
     parser.add_argument('--chunksize', help='Chunk size to be used in multiprocessing.map.',
         default=1, type=int)
-    parser.add_argument('--use-blocks',
-        help='Compare added and deleted blocks of code rather than lines.', dest='use_blocks',
+    parser.add_argument('--use-edits',
+        help='Compare added and deleted edits of code rather than lines.', dest='use_blocks',
         action='store_true')
     parser.set_defaults(parallel=True)
     parser.set_defaults(use_blocks=False)
@@ -574,10 +553,10 @@ if __name__ == "__main__":
                               num_processes=args.numprocesses, exclude=args.exclude,
                               chunksize=args.chunksize, use_blocks=args.use_blocks)
     else:
-        df_commits, df_coedits = process_repo_serial(args.repo, args.exclude,
+        df_commits, df_edits = process_repo_serial(args.repo, args.exclude,
             use_blocks=args.use_blocks)
         con = sqlite3.connect(args.outfile)
         if not df_commits.empty:
             df_commits.to_sql('commits', con, if_exists='append')
-        if not df_coedits.empty:
-            df_coedits.to_sql('coedits', con, if_exists='append')
+        if not df_edits.empty:
+            df_edits.to_sql('edits', con, if_exists='append')

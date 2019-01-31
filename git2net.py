@@ -70,13 +70,13 @@ def pre_to_post(deleted_lines, added_lines):
 
     # create mapping between pre and post edit line numbers
     left_to_right = {}
-    # create chunk dictionary
+    # create block dictionary
     # keys are deleted line numbers
     # values are tuples containing
     #  * number of deleted lines
     #  * right line number
     #  * number of added lines
-    chunks = {}
+    blocks = {}
     right = min(min_added, min_deleted)
     left = min(min_added, min_deleted)
 
@@ -86,23 +86,23 @@ def pre_to_post(deleted_lines, added_lines):
 
     while left <= max(max_added, max_deleted):
 
-        # compute size of added and deleted chunks
-        chunk_added = get_block_size(added_lines, right)
-        chunk_deleted = get_block_size(deleted_lines, left)
+        # compute size of added and deleted blocks
+        added_block = get_block_size(added_lines, right)
+        deleted_block = get_block_size(deleted_lines, left)
 
         # we ignore pure additions
-        if chunk_deleted > 0:
-            chunks[left] = (chunk_deleted, right, chunk_added)
+        if deleted_block > 0:
+            blocks[left] = (deleted_block, right, added_block)
 
-        # deleted chunk is larger than added chunk
-        if chunk_deleted > chunk_added:
-            no_right_inc = chunk_deleted - chunk_added
-            both_inc = chunk_added
+        # deleted block is larger than added block
+        if deleted_block > added_block:
+            no_right_inc = deleted_block - added_block
+            both_inc = added_block
 
-        # added chunk is larger than deleted chunk
-        elif chunk_added > chunk_deleted:
-            jump_right = chunk_added - chunk_deleted
-            both_inc = chunk_deleted
+        # added block is larger than deleted block
+        elif added_block > deleted_block:
+            jump_right = added_block - deleted_block
+            both_inc = deleted_block
 
         # increment left and right counter
         if both_inc>0:
@@ -121,7 +121,7 @@ def pre_to_post(deleted_lines, added_lines):
             right += 1
             jump_right = 0
 
-    return left_to_right, chunks
+    return left_to_right, blocks
 
 def get_text_entropy(text):
     return entropy([text.count(chr(i)) for i in range(256)], base=2)
@@ -137,64 +137,66 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
     deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
     added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
-    left_to_right, chunks = pre_to_post(deleted_lines, added_lines)
+    left_to_right, blocks = pre_to_post(deleted_lines, added_lines)
 
     try:
         blame = git_repo.git.blame(commit.hash + '^', '--', path).split('\n')
         if use_blocks:
             for num_line, line in deleted_lines.items():
-                if num_line in chunks.keys():
-                    chunk = chunks[num_line]
+                if num_line in blocks.keys():
+                    block = blocks[num_line]
 
                     blame_fields = blame[num_line - 1].split(' ')
                     buggy_commit_hash = blame_fields[0].replace('^', '')
 
                     c = {}
+                    c['mod_filename'] = mod.filename
+                    c['mod_new_path'] = path
+                    c['mod_old_path'] = mod.old_path
                     c['pre_commit'] = buggy_commit_hash
                     c['post_commit'] = commit.hash
-                    c['mod_filename'] = mod.filename
+                    c['mod_added'] = mod.added
+                    c['mod_removed'] = mod.removed
                     c['mod_cyclomatic_complexity'] = mod.complexity
                     c['mod_loc'] = mod.nloc
-                    c['mod_old_path'] = mod.old_path
-                    c['mod_new_path'] = path
                     c['mod_token_count'] = mod.token_count
-                    c['mod_removed'] = mod.removed
-                    c['mod_added'] = mod.added
 
-                    deleted_chunk = []
-                    for i in range(num_line, num_line + chunk[0]):
-                        deleted_chunk.append(deleted_lines[i])
 
-                    added_chunk = []
-                    for i in range(chunk[1], chunk[1] + chunk[2]):
-                        added_chunk.append(added_lines[i])
 
-                    deleted_chunk = ''.join(deleted_chunk)
-                    added_chunk = ''.join(added_chunk)
+                    deleted_block = []
+                    for i in range(num_line, num_line + block[0]):
+                        deleted_block.append(deleted_lines[i])
 
-                    c['pre_chunk_starting_line_num'] = num_line
-                    c['pre_chunk_len_in_lines'] = chunk[0]
-                    c['pre_chunk_len_in_chars'] = len(deleted_chunk)
+                    added_block = []
+                    for i in range(block[1], block[1] + block[2]):
+                        added_block.append(added_lines[i])
 
-                    c['post_chunk_starting_line_num'] = chunk[1]
-                    c['post_chunk_len_in_lines'] = chunk[2]
-                    c['post_chunk_len_in_chars'] = len(added_chunk)
+                    deleted_block = ''.join(deleted_block)
+                    added_block = ''.join(added_block)
 
-                    if len(deleted_chunk) > 0:
-                        c['pre_chunk_text_entropy'] = get_text_entropy(deleted_chunk)
+                    c['pre_block_starting_line_num'] = num_line
+                    c['pre_block_len_in_lines'] = block[0]
+                    c['pre_block_len_in_chars'] = len(deleted_block)
+
+                    c['post_block_starting_line_num'] = block[1]
+                    c['post_block_len_in_lines'] = block[2]
+                    c['post_block_len_in_chars'] = len(added_block)
+
+                    if len(deleted_block) > 0:
+                        c['pre_block_text_entropy'] = get_text_entropy(deleted_block)
                     else:
-                        c['pre_chunk_text_entropy'] = None
+                        c['pre_block_text_entropy'] = None
 
-                    if len(added_chunk) > 0:
-                        c['post_chunk_text_entropy'] = get_text_entropy(added_chunk)
+                    if len(added_block) > 0:
+                        c['post_block_text_entropy'] = get_text_entropy(added_block)
                     else:
-                        c['post_chunk_text_entropy'] = None
+                        c['post_block_text_entropy'] = None
 
                     # if no lines were added (only deletion)
-                    if chunk[2] == 0:
+                    if block[2] == 0:
                         c['levenshtein_dist'] = None
                     else:
-                        c['levenshtein_dist'] = lev_dist(deleted_chunk, added_chunk)
+                        c['levenshtein_dist'] = lev_dist(deleted_block, added_block)
 
 
                     df = df.append(c, ignore_index=True)
@@ -348,7 +350,7 @@ def get_unified_changes(repo_string, commit_hash, filename):
             deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
             added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
-            left_to_right, chunks = pre_to_post(deleted_lines, added_lines)
+            left_to_right, blocks = pre_to_post(deleted_lines, added_lines)
 
             post_source_code = modification.source_code.split('\n')
 
@@ -364,15 +366,15 @@ def get_unified_changes(repo_string, commit_hash, filename):
             left = 1
             right = 1
             while max(left, right) < max_line_no:
-                if left in chunks.keys():
+                if left in blocks.keys():
                     cur = left
-                    for i in range(chunks[cur][0]):
+                    for i in range(blocks[cur][0]):
                         pre.append(left)
                         post.append(None)
                         action.append('-')
                         code.append(deleted_lines[left])
                         left += 1
-                    for i in range(chunks[cur][2]):
+                    for i in range(blocks[cur][2]):
                         pre.append(None)
                         post.append(right)
                         action.append('+')

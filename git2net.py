@@ -132,10 +132,7 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
 
     path = mod.new_path
 
-    diff = mod.diff
-    diff = diff.replace('\ No newline at end of file\n', '')
-
-    parsed_lines = git_repo.parse_diff(diff)
+    parsed_lines = git_repo.parse_diff(mod.diff)
 
     deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
     added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
@@ -151,57 +148,6 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
 
                     blame_fields = blame[num_line - 1].split(' ')
                     buggy_commit_hash = blame_fields[0].replace('^', '')
-
-                    # c = {}
-                    # c['pre_commit'] = [buggy_commit_hash]
-                    # c['post_commit'] = [commit.hash]
-                    # c['mod_filename'] = [mod.filename]
-                    # c['mod_cyclomatic_complexity'] = [mod.complexity]
-                    # c['mod_loc'] = [mod.nloc]
-                    # c['mod_old_path'] = [mod.old_path]
-                    # c['mod_new_path'] = [path]
-                    # c['mod_token_count'] = [mod.token_count]
-                    # c['mod_removed'] = [mod.removed]
-                    # c['mod_added'] = [mod.added]
-
-                    # deleted_chunk = []
-                    # for i in range(num_line, num_line + chunk[0]):
-                    #     deleted_chunk.append(deleted_lines[i])
-
-                    # added_chunk = []
-                    # for i in range(chunk[1], chunk[1] + chunk[2]):
-                    #     added_chunk.append(added_lines[i])
-
-                    # deleted_chunk = ''.join(deleted_chunk)
-                    # added_chunk = ''.join(added_chunk)
-
-                    # c['pre_chunk_starting_line_num'] = [num_line]
-                    # c['pre_chunk_len_in_lines'] = [chunk[0]]
-                    # c['pre_chunk_len_in_chars'] = [len(deleted_chunk)]
-
-                    # c['post_chunk_starting_line_num'] = [chunk[1]]
-                    # c['post_chunk_len_in_lines'] = [chunk[2]]
-                    # c['post_chunk_len_in_chars'] = [len(added_chunk)]
-
-                    # if len(deleted_chunk) > 0:
-                    #     c['pre_chunk_text_entropy'] = [get_text_entropy(deleted_chunk)]
-                    # else:
-                    #     c['pre_chunk_text_entropy'] = [None]
-
-                    # if len(added_chunk) > 0:
-                    #     c['post_chunk_text_entropy'] = [get_text_entropy(added_chunk)]
-                    # else:
-                    #     c['post_chunk_text_entropy'] = [None]
-
-                    # # if no lines were added (only deletion)
-                    # if chunk[2] == 0:
-                    #     c['levenshtein_dist'] = [None]
-                    # else:
-                    #     c['levenshtein_dist'] = [lev_dist(deleted_chunk, added_chunk)]
-
-                    # df_t = pd.DataFrame(c)
-                    # df = pd.concat([df, df_t])
-
 
                     c = {}
                     c['pre_commit'] = buggy_commit_hash
@@ -257,31 +203,6 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
                 blame_fields = blame[num_line - 1].split(' ')
                 buggy_commit_hash = blame_fields[0].replace('^', '')
 
-                # c = {}
-                # c['pre_commit'] = [buggy_commit_hash]
-                # c['post_commit'] = [commit.hash]
-                # c['pre_line_len'] = [len(line)]
-                # c['pre_line_num'] = [num_line]
-                # c['mod_filename'] = [mod.filename]
-                # c['mod_cyclomatic_complexity'] = [mod.complexity]
-                # c['mod_loc'] = [mod.nloc]
-                # c['mod_old_path'] = [mod.old_path]
-                # c['mod_new_path'] = [path]
-                # c['mod_token_count'] = [mod.token_count]
-                # c['mod_removed'] = [mod.removed]
-                # c['mod_added'] = [mod.added]
-
-                # if left_to_right[num_line] in added_lines:
-                #     c['post_line_len'] = [len(added_lines[left_to_right[num_line]])]
-                #     c['post_line_num'] = [left_to_right[num_line]]
-                #     c['levenshtein_dist'] = [lev_dist(added_lines[left_to_right[num_line]], line)]
-                # else:
-                #     c['post_line_len'] = [0]
-                #     c['post_line_num'] = [None]
-                #     c['levenshtein_dist'] = [None]
-                # df_t = pd.DataFrame(c)
-                # df = pd.concat([df, df_t])
-
                 c = {}
                 c['pre_commit'] = buggy_commit_hash
                 c['post_commit'] = commit.hash
@@ -319,23 +240,23 @@ def process_commit(git_repo, commit, exclude_paths = set(), use_blocks = False):
 
     # parse commit
     c = {}
-    c['hash'] = [commit.hash]
-    c['author_email'] = [commit.author.email]
-    c['author_name'] = [commit.author.name]
-    c['committer_email'] = [commit.committer.email]
-    c['committer_name'] = [commit.committer.name]
-    c['author_date'] = [commit.author_date.strftime('%Y-%m-%d %H:%M:%S')]
-    c['committer_date'] = [commit.committer_date.strftime('%Y-%m-%d %H:%M:%S')]
-    c['committer_timezone'] = [commit.committer_timezone]
-    c['modifications'] = [len(commit.modifications)]
-    c['msg_len'] = [len(commit.msg)]
-    c['project_name'] = [commit.project_name]
-    c['parents'] = [ ','.join(commit.parents)]
-    c['merge'] = [commit.merge]
-    c['in_main_branch'] = [commit.in_main_branch]
-    c['branches'] = [ ','.join(commit.branches)]
+    c['hash'] = commit.hash
+    c['author_email'] = commit.author.email
+    c['author_name'] = commit.author.name
+    c['committer_email'] = commit.committer.email
+    c['committer_name'] = commit.committer.name
+    c['author_date'] = commit.author_date.strftime('%Y-%m-%d %H:%M:%S')
+    c['committer_date'] = commit.committer_date.strftime('%Y-%m-%d %H:%M:%S')
+    c['committer_timezone'] = commit.committer_timezone
+    c['modifications'] = len(commit.modifications)
+    c['msg_len'] = len(commit.msg)
+    c['project_name'] = commit.project_name
+    c['parents'] = ','.join(commit.parents)
+    c['merge'] = commit.merge
+    c['in_main_branch'] = commit.in_main_branch
+    c['branches'] = ','.join(commit.branches)
 
-    df_commit = pd.DataFrame(c)
+    df_commit = pd.DataFrame(c, index=[0])
 
     # parse modification
     for modification in commit.modifications:

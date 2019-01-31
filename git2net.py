@@ -4,12 +4,14 @@ import logging
 import sqlite3
 import os
 import argparse
+import sys
 
 from multiprocessing import Pool
 from multiprocessing import Semaphore
 
 import pandas as pd
 import progressbar
+from tqdm import tqdm
 import numpy as np
 from scipy.stats import entropy
 
@@ -21,38 +23,37 @@ import pathpy as pp
 
 logger = logging.getLogger(__name__)
 
-
-def chunk_size(lines, k):
+def get_block_size(lines, k):
     """
-    Calculates the size of a chunk of added/deleted lines starting
-    in a given line k.
+    Calculates the length (in number of lines) of a block of added/deleted lines starting in a given
+    line k.
 
     Parameters
     ----------
     @param lines: dictionary of added or deleted lines
     @param k: line number to check for
     """
-    if k not in lines or (k>1 and k-1 in lines):
-        chunk = False
-        chunksize = 0
+    if k not in lines or (k > 1 and k - 1 in lines):
+        block = False
+        block_size = 0
     else:
-        chunk = True
-        chunksize = 1
+        block = True
+        block_size = 1
 
-    while chunk:
-        if k+chunksize in lines:
-            chunksize += 1
+    while block:
+        if k + block_size in lines:
+            block_size += 1
         else:
-            chunk = False
-    return chunksize
+            block = False
+    return block_size
 
 def pre_to_post(deleted_lines, added_lines):
     """
-    Maps line numbers between the pre- and post-commit version
-    of a modification.
+    Maps line numbers between the pre- and post-commit version of a modification.
     """
-    
-    # either deleted or added lines must contain items otherwise there would not be a modification to process
+
+    # either deleted or added lines must contain items otherwise there would not be a modification
+    # to process
     if len(deleted_lines.keys()) > 0:
         max_deleted = max(deleted_lines.keys())
         min_deleted = min(deleted_lines.keys())
@@ -69,7 +70,13 @@ def pre_to_post(deleted_lines, added_lines):
 
     # create mapping between pre and post edit line numbers
     left_to_right = {}
-    chunks = {} # keys are deleted line numbers, values are tuples containing (number of deleted lines, right line number, number of added lines)
+    # create chunk dictionary
+    # keys are deleted line numbers
+    # values are tuples containing
+    #  * number of deleted lines
+    #  * right line number
+    #  * number of added lines
+    chunks = {}
     right = min(min_added, min_deleted)
     left = min(min_added, min_deleted)
 
@@ -80,8 +87,8 @@ def pre_to_post(deleted_lines, added_lines):
     while left <= max(max_added, max_deleted):
 
         # compute size of added and deleted chunks
-        chunk_added = chunk_size(added_lines, right)
-        chunk_deleted = chunk_size(deleted_lines, left)
+        chunk_added = get_block_size(added_lines, right)
+        chunk_deleted = get_block_size(deleted_lines, left)
 
         # we ignore pure additions
         if chunk_deleted > 0:
@@ -101,16 +108,16 @@ def pre_to_post(deleted_lines, added_lines):
         if both_inc>0:
             both_inc -= 1
             left_to_right[left] = right
-            left +=1            
+            left +=1
             right += 1
         elif no_right_inc>0:
                 no_right_inc -= 1
-                left_to_right[left] = False                
+                left_to_right[left] = False
                 left += 1
         else:
             right += jump_right
             left_to_right[left] = right
-            left +=1            
+            left +=1
             right += 1
             jump_right = 0
 
@@ -120,7 +127,7 @@ def get_text_entropy(text):
     return entropy([text.count(chr(i)) for i in range(256)], base=2)
 
 def extract_coedits(git_repo, commit, mod, use_blocks=False):
-    
+
     df = pd.DataFrame()
 
     path = mod.new_path
@@ -184,7 +191,7 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
                     if len(added_chunk) > 0:
                         c['post_chunk_text_entropy'] = [get_text_entropy(added_chunk)]
                     else:
-                        c['post_chunk_text_entropy'] = [None]                 
+                        c['post_chunk_text_entropy'] = [None]
 
                     # if no lines were added (only deletion)
                     if chunk[2] == 0:
@@ -201,7 +208,7 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
 
                 c = {}
                 c['pre_commit'] = [buggy_commit_hash]
-                c['post_commit'] = [commit.hash]            
+                c['post_commit'] = [commit.hash]
                 c['pre_line_len'] = [len(line)]
                 c['pre_line_num'] = [num_line]
                 c['mod_filename'] = [mod.filename]
@@ -212,7 +219,7 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
                 c['mod_token_count'] = [mod.token_count]
                 c['mod_removed'] = [mod.removed]
                 c['mod_added'] = [mod.added]
-                
+
                 if left_to_right[num_line] in added_lines:
                     c['post_line_len'] = [len(added_lines[left_to_right[num_line]])]
                     c['post_line_num'] = [left_to_right[num_line]]
@@ -225,9 +232,9 @@ def extract_coedits(git_repo, commit, mod, use_blocks=False):
                 df = pd.concat([df, df_t])
 
     except GitCommandError:
-        logger.debug("Could not found file %s in commit %s. Probably a double rename!", mod.filename,
-                        commit.hash)
-    
+        logger.debug("Could not found file %s in commit %s. Probably a double rename!",
+                        mod.filename, commit.hash)
+
     return df
 
 
@@ -252,9 +259,9 @@ def process_commit(git_repo, commit, exclude_paths = set(), use_blocks = False):
     c['merge'] = [commit.merge]
     c['in_main_branch'] = [commit.in_main_branch]
     c['branches'] = [ ','.join(commit.branches)]
-    
+
     df_commit = pd.DataFrame(c)
-    
+
     # parse modification
     for modification in commit.modifications:
         exclude_file = False
@@ -276,25 +283,22 @@ def process_commit(git_repo, commit, exclude_paths = set(), use_blocks = False):
 
 
 def process_repo_serial(repo_string, exclude=None, use_blocks=False):
-    
+
     git_repo = pydriller.GitRepository(repo_string)
     exclude_paths = []
     if exclude:
         with open(exclude) as f:
             exclude_paths = [x.strip() for x in f.readlines()]
-    
+
     df_commits = pd.DataFrame()
     df_coedits = pd.DataFrame()
 
     i = 0
     commits = [c for c in git_repo.get_list_commits()]
-    with progressbar.ProgressBar(max_value=len(commits)) as bar:
-        for commit in commits:
-            df_1, df_2 = process_commit(git_repo, commit, exclude_paths, use_blocks=use_blocks)
-            df_commits = pd.concat([df_commits, df_1])
-            df_coedits = pd.concat([df_coedits, df_2])
-            i += 1
-            bar.update(i)
+    for commit in tqdm(commits):
+        df_1, df_2 = process_commit(git_repo, commit, exclude_paths, use_blocks=use_blocks)
+        df_commits = pd.concat([df_commits, df_1])
+        df_coedits = pd.concat([df_coedits, df_2])
     return df_commits, df_coedits
 
 semaphore = Semaphore(1)
@@ -309,8 +313,9 @@ def process_commit_parallel(arg):
         with open(exclude) as f:
             exclude_paths = [x.strip() for x in f.readlines()]
 
-    df_1, df_2 = process_commit(git_repo, git_repo.get_commit(commit_hash), exclude_paths, use_blocks=use_blocks)    
-    
+    df_1, df_2 = process_commit(git_repo, git_repo.get_commit(commit_hash), exclude_paths,
+                                use_blocks=use_blocks)
+
     with semaphore:
         con = sqlite3.connect(sqlite_db_file)
         if not df_1.empty:
@@ -320,21 +325,23 @@ def process_commit_parallel(arg):
     return True
 
 
-def process_repo_parallel(repo_string, sqlite_db_file, num_processes=os.cpu_count(), exclude=None, chunksize=1, use_blocks=False):
-    
-    print('Using {0} workers.'.format(num_processes))    
+def process_repo_parallel(repo_string, sqlite_db_file, num_processes=os.cpu_count(), exclude=None,
+                          chunksize=1, use_blocks=False):
+
     git_repo = pydriller.GitRepository(repo_string)
-    args = [ (repo_string, c.hash, sqlite_db_file, exclude, use_blocks) for c in git_repo.get_list_commits()]
+    args = [ (repo_string, c.hash, sqlite_db_file, exclude, use_blocks)
+            for c in git_repo.get_list_commits()]
 
     p = Pool(num_processes)
-    with progressbar.ProgressBar(max_value=len(args)) as bar:
+    with tqdm(total=len(args), desc='Using {0} workers'.format(num_processes)) as pbar:
         for i,_ in enumerate(p.imap_unordered(process_commit_parallel, args, chunksize=chunksize)):
-            bar.update(i)
+            pbar.update(chunksize)
 
 
 def get_unified_changes(repo_string, commit_hash, filename):
     """
-    Returns dataframe with github-like unified diff representation of the content of a file before and after a commit for a given git repository, commit hash and filename.
+    Returns dataframe with github-like unified diff representation of the content of a file before
+    and after a commit for a given git repository, commit hash and filename.
     """
     git_repo = pydriller.GitRepository(repo_string)
     commit = git_repo.get_commit(commit_hash)
@@ -349,7 +356,9 @@ def get_unified_changes(repo_string, commit_hash, filename):
 
             post_source_code = modification.source_code.split('\n')
 
-            max_line_no = max(max(deleted_lines.keys()), max(added_lines.keys()), len(post_source_code))
+            max_line_no = max(max(deleted_lines.keys()),
+                              max(added_lines.keys()),
+                              len(post_source_code))
 
             pre = []
             post = []
@@ -391,7 +400,7 @@ def get_unified_changes(repo_string, commit_hash, filename):
                     code.append(post_source_code[right - 1]) # minus one as list starts from 0
                     left += 1
                     right += 1
-                
+
     return pd.DataFrame({'pre': pre, 'post': post, 'action': action, 'code': code})
 
 
@@ -410,8 +419,10 @@ def _get_tedges(db_location):
                                           coedits.post_commit,
                                           coedits.levenshtein_dist
                                    FROM coedits
-                                   JOIN commits AS c_pre ON substr(c_pre.hash, 1, 8) == coedits.pre_commit) AS x
-                                   JOIN commits AS c_post ON substr(c_post.hash, 1, 8) == substr(x.post_commit, 1, 8
+                                   JOIN commits AS c_pre
+                                   ON substr(c_pre.hash, 1, 8) == coedits.pre_commit) AS x
+                                   JOIN commits AS c_post
+                                   ON substr(c_post.hash, 1, 8) == substr(x.post_commit, 1, 8
                                  )
                             WHERE source != target""", con)
 
@@ -465,13 +476,15 @@ def get_bipartite_network(db_location, time_from=None, time_to=None):
         if (edge.time >= time_from) and (edge.time <= time_to):
             n.add_edge(edge.source, edge.target)
     return n
-    
+
 
 def _get_dag_edges(db_location):
     con = sqlite3.connect(db_location)
-    
-    dag_edges = pd.read_sql("""SELECT DISTINCT x.author_pre||","||substr(x.pre_commit, 1, 8) as source,
-                                      c_post.author_email||","|| substr(x.post_commit, 1, 8) AS target,
+
+    dag_edges = pd.read_sql("""SELECT DISTINCT x.author_pre||","||substr(x.pre_commit, 1, 8)
+                                        AS source,
+                                      c_post.author_email||","|| substr(x.post_commit, 1, 8)
+                                        AS target,
                                       c_post.committer_date AS time
                                FROM (
                                       SELECT c_pre.author_email AS author_pre,
@@ -479,7 +492,8 @@ def _get_dag_edges(db_location):
                                              coedits.post_commit,
                                              coedits.levenshtein_dist
                                       FROM coedits
-                                      JOIN commits AS c_pre ON substr(c_pre.hash, 1, 8) == coedits.pre_commit
+                                      JOIN commits AS c_pre
+                                      ON substr(c_pre.hash, 1, 8) == coedits.pre_commit
                                     ) AS x
                                 JOIN (
                                        SELECT *
@@ -511,86 +525,13 @@ def get_dag(db_location, time_from=None, time_to=None):
     return dag
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-def mine_git_repo(repo_string, sqlite_db_file, exclude=[], no_parallel=False, num_processes=os.cpu_count(), chunk_size=1, use_blocks=True):
+def mine_git_repo(repo_string, sqlite_db_file, exclude=[], no_parallel=False,
+                  num_processes=os.cpu_count(), get_block_size=1, use_blocks=True):
 
     if no_parallel == False:
-        process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file, num_processes=num_processes, exclude=exclude, chunksize=chunk_size, use_blocks=use_blocks)
+        process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
+                              num_processes=num_processes, exclude=exclude,
+                              chunksize=get_block_size, use_blocks=use_blocks)
     else:
         df_commits, df_coedits = process_repo_serial(repo_string, exclude, use_blocks=use_blocks)
         con = sqlite3.connect(sqlite_db_file)
@@ -600,30 +541,34 @@ def mine_git_repo(repo_string, sqlite_db_file, exclude=[], no_parallel=False, nu
             df_coedits.to_sql('coedits', con, if_exists='append')
 
 
-
-
-
-
-
-
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Extracts commit and co-editing data from git repositories.')
-    parser.add_argument('repo', help='path to repository to be parsed.', type=str)
-    parser.add_argument('outfile', help='path to SQLite DB file storing results.', type=str)
-    parser.add_argument('--exclude', help='exclude path prefixes in given file', type=str, default=None)
-    parser.add_argument('--no-parallel', help='do not use multi-core processing.', dest='parallel', action='store_false')
-    parser.add_argument('--numprocesses', help='number of CPU cores to use for multi-core processing. Defaults to number of CPU cores.', default=os.cpu_count(), type=int)
-    parser.add_argument('--chunksize', help='chunk size to be used in multiprocessing.map.', default=1, type=int)
-    parser.add_argument('--use-blocks', help='compare added and deleted blocks of code rather than lines', dest='use_blocks', action='store_true')
+    parser = argparse.ArgumentParser(
+        description='Extracts commit and co-editing data from git repositories.')
+    parser.add_argument('repo', help='Path to repository to be parsed.', type=str)
+    parser.add_argument('outfile', help='Path to SQLite DB file storing results.', type=str)
+    parser.add_argument('--exclude', help='Exclude path prefixes in given file.', type=str,
+        default=None)
+    parser.add_argument('--no-parallel', help='Do not use multi-core processing.', dest='parallel',
+        action='store_false')
+    parser.add_argument('--numprocesses',
+        help='Number of CPU cores used for multi-core processing. Defaults to number of CPU cores.',
+        default=os.cpu_count(), type=int)
+    parser.add_argument('--chunksize', help='Chunk size to be used in multiprocessing.map.',
+        default=1, type=int)
+    parser.add_argument('--use-blocks',
+        help='Compare added and deleted blocks of code rather than lines.', dest='use_blocks',
+        action='store_true')
     parser.set_defaults(parallel=True)
     parser.set_defaults(use_blocks=False)
 
     args = parser.parse_args()
     if args.parallel:
-        process_repo_parallel(repo_string=args.repo, sqlite_db_file=args.outfile, num_processes=args.numprocesses, exclude=args.exclude, chunksize=args.chunksize, use_blocks=args.use_blocks)
+        process_repo_parallel(repo_string=args.repo, sqlite_db_file=args.outfile,
+                              num_processes=args.numprocesses, exclude=args.exclude,
+                              chunksize=args.chunksize, use_blocks=args.use_blocks)
     else:
-        df_commits, df_coedits = process_repo_serial(args.repo, args.exclude, use_blocks=args.use_blocks)
+        df_commits, df_coedits = process_repo_serial(args.repo, args.exclude,
+            use_blocks=args.use_blocks)
         con = sqlite3.connect(args.outfile)
         if not df_commits.empty:
             df_commits.to_sql('commits', con, if_exists='append')

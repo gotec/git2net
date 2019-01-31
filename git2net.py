@@ -97,7 +97,7 @@ def identify_edits(deleted_lines, added_lines, use_blocks=False):
                                       'number of deleted lines': length_deleted_block,
                                       'post start': post,
                                       'number of added lines': length_added_block},
-                                     ignore_index=True)
+                                     ignore_index=True, sort=False)
 
             # deleted edit is larger than added edit
             if length_deleted_block > length_added_block:
@@ -116,7 +116,7 @@ def identify_edits(deleted_lines, added_lines, use_blocks=False):
                                       'number of deleted lines': int(pre_in_deleted),
                                       'post start': post,
                                       'number of added lines': int(post_in_added)},
-                                     ignore_index=True)
+                                     ignore_index=True, sort=False)
             if pre_in_deleted and not post_in_added:
                 no_post_inc += 1
             if post_in_added and not pre_in_deleted:
@@ -157,8 +157,6 @@ def extract_edits(git_repo, commit, mod, use_blocks=False):
     added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
     pre_to_post, edits = identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
-
-    print(edits)
 
     try:
         blame = git_repo.git.blame(commit.hash + '^', '--', path).split('\n')
@@ -220,7 +218,7 @@ def extract_edits(git_repo, commit, mod, use_blocks=False):
                     c['post_entropy'] = None
                     c['levenshtein_dist'] = None
 
-            df = df.append(c, ignore_index=True)
+            df = df.append(c, ignore_index=True, sort=False)
     except GitCommandError:
         logger.debug("Could not found file %s in commit %s. Probably a double rename!",
                         mod.filename, commit.hash)
@@ -266,8 +264,9 @@ def process_commit(git_repo, commit, exclude_paths = set(), use_blocks = False):
                     exclude_file = True
                     excluded_path = modification.old_path
         if not exclude_file:
-            df = extract_edits(git_repo, commit, modification, use_blocks=use_blocks)
-            df_edits = pd.concat([df_edits, df])
+            df_edits = df_edits.append(
+                extract_edits(git_repo, commit, modification, use_blocks=use_blocks),
+                ignore_index=True, sort=True)
     return df_commit, df_edits
 
 
@@ -287,8 +286,8 @@ def process_repo_serial(repo_string, exclude=None, use_blocks=False):
     commits = [c for c in git_repo.get_list_commits()]
     for commit in tqdm(commits, desc='Serial'):
         df_1, df_2 = process_commit(git_repo, commit, exclude_paths, use_blocks=use_blocks)
-        df_commits = pd.concat([df_commits, df_1])
-        df_edits = pd.concat([df_edits, df_2])
+        df_commits = pd.concat([df_commits, df_1], sort=True)
+        df_edits = pd.concat([df_edits, df_2], sort=True)
     return df_commits, df_edits
 
 def process_commit_parallel(arg):

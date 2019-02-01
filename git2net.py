@@ -429,7 +429,7 @@ def get_coediting_network(db_location, time_from=None, time_to=None):
         time_to = max(tedges.time)
 
     t = pp.TemporalNetwork()
-    for idx, edge in tedges.iterrows():
+    for _, edge in tedges.iterrows():
         if (edge.time >= time_from) and (edge.time <= time_to):
             t.add_edge(edge.source,
                        edge.target,

@@ -518,55 +518,53 @@ def get_dag(db_location, time_from=None, time_to=None):
 def mine_git_repo(repo_string, sqlite_db_file, use_blocks=True, num_processes=os.cpu_count(),
                   chunksize=1, exclude=[]):
 
-    # if os.path.exists(sqlite_db_file):
-    #     try:
-    #         with sqlite3.connect(sqlite_db_file) as con:
-    #             prev_method, prev_repository = con.execute(
-    #                 "SELECT method, repository FROM _metadata").fetchall()[0]
+    if os.path.exists(sqlite_db_file):
+        try:
+            with sqlite3.connect(sqlite_db_file) as con:
+                prev_method, prev_repository = con.execute(
+                    "SELECT method, repository FROM _metadata").fetchall()[0]
 
-    #             if (prev_method == 'blocks' if use_blocks else 'lines') and \
-    #             (prev_repository == repo_string):
-    #                 p_commits = set(x[0]
-    #                     for x in con.execute("SELECT hash FROM commits").fetchall())
-    #                 c_commits = set(c.hash
-    #                     for c in pydriller.GitRepository(repo_string).get_list_commits())
-    #                 if not p_commits.issubset(c_commits):
-    #                     raise Exception("Found a database that was created with identical " +
-    #                                     "settings. However, some commits in the database are not " +
-    #                                     "in the provided git repository. Please provide a clean " +
-    #                                     "database.")
-    #                 else:
-    #                     if p_commits == c_commits:
-    #                         print("The provided database is already complete!")
-    #                         return
-    #                     else:
-    #                         print("Found a matching database on provided path. " +
-    #                                 "Skipping {} ({:.2f}%) of {} commits. {} commits remaining"
-    #                                 .format(len(p_commits), len(p_commits) / len(c_commits) * 100,
-    #                                         len(c_commits), len(c_commits) - len(p_commits)))
-    #             else:
-    #                 raise Exception("Found a database on provided path that was created with " +
-    #                                 "settings not matching the ones selected for the current " +
-    #                                 "run. A path to either no database or a database from a  " +
-    #                                 "previously paused run with identical settings is required.")
-    #     except sqlite3.OperationalError:
-    #         raise Exception("Found a database on provided path that was likely not created with " +
-    #                         "git2net. A path to either no database or a database from a " +
-    #                         "previously paused run with identical settings is required.")
-    # else:
-    #     print("Found no database on provided path. Starting from scratch.")
-    #     with sqlite3.connect(sqlite_db_file) as con:
-    #         con.execute("CREATE TABLE _metadata ('created with', 'repository', 'date', 'method')")
-    #         con.execute("""INSERT INTO _metadata ('created with', 'repository', 'date', 'method')
-    #                     VALUES (:version, :repository, :date, :method)""",
-    #                     {'version': 'git2net alpha',
-    #                      'repository': repo_string,
-    #                      'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-    #                      'method': 'blocks' if use_blocks else 'lines'})
-    #         con.commit()
-    #         p_commits = []
-
-    p_commits = []
+                if (prev_method == 'blocks' if use_blocks else 'lines') and \
+                (prev_repository == repo_string):
+                    p_commits = set(x[0]
+                        for x in con.execute("SELECT hash FROM commits").fetchall())
+                    c_commits = set(c.hash
+                        for c in pydriller.GitRepository(repo_string).get_list_commits())
+                    if not p_commits.issubset(c_commits):
+                        raise Exception("Found a database that was created with identical " +
+                                        "settings. However, some commits in the database are not " +
+                                        "in the provided git repository. Please provide a clean " +
+                                        "database.")
+                    else:
+                        if p_commits == c_commits:
+                            print("The provided database is already complete!")
+                            return
+                        else:
+                            print("Found a matching database on provided path. " +
+                                    "Skipping {} ({:.2f}%) of {} commits. {} commits remaining"
+                                    .format(len(p_commits), len(p_commits) / len(c_commits) * 100,
+                                            len(c_commits), len(c_commits) - len(p_commits)))
+                else:
+                    raise Exception("Found a database on provided path that was created with " +
+                                    "settings not matching the ones selected for the current " +
+                                    "run. A path to either no database or a database from a  " +
+                                    "previously paused run with identical settings is required.")
+        except sqlite3.OperationalError:
+            raise Exception("Found a database on provided path that was likely not created with " +
+                            "git2net. A path to either no database or a database from a " +
+                            "previously paused run with identical settings is required.")
+    else:
+        print("Found no database on provided path. Starting from scratch.")
+        with sqlite3.connect(sqlite_db_file) as con:
+            con.execute("CREATE TABLE _metadata ('created with', 'repository', 'date', 'method')")
+            con.execute("""INSERT INTO _metadata ('created with', 'repository', 'date', 'method')
+                        VALUES (:version, :repository, :date, :method)""",
+                        {'version': 'git2net alpha',
+                         'repository': repo_string,
+                         'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                         'method': 'blocks' if use_blocks else 'lines'})
+            con.commit()
+            p_commits = []
 
     if num_processes > 1:
         process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,

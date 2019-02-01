@@ -17,6 +17,7 @@ from scipy.stats import entropy
 import pydriller as pydriller
 from pydriller.git_repository import GitCommandError
 from Levenshtein import distance as lev_dist
+import datetime
 
 import pathpy as pp
 
@@ -221,7 +222,7 @@ def extract_edits(git_repo, commit, mod, use_blocks=False):
             df = df.append(c, ignore_index=True, sort=False)
     except GitCommandError:
         logger.debug("Could not found file %s in commit %s. Probably a double rename!",
-                        mod.filename, commit.hash)
+                     mod.filename, commit.hash)
 
     return df
 
@@ -277,7 +278,7 @@ def process_commit(args):
     return {'commit': df_commit, 'edits': df_edits}
 
 
-def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=None):
+def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=None, _p_commits=[]):
     git_repo = pydriller.GitRepository(repo_string)
     exclude_paths = []
     if exclude:
@@ -288,9 +289,10 @@ def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=N
     df_edits = pd.DataFrame()
 
     i = 0
-    commits = [c for c in git_repo.get_list_commits()]
+    commits = [commit for commit in git_repo.get_list_commits() if commit.hash not in _p_commits]
     for commit in tqdm(commits, desc='Serial'):
-        args = {'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks, 'exclude_paths': exclude_paths}
+        args = {'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
+                'exclude_paths': exclude_paths}
         result = process_commit(args)
         df_commits = pd.concat([df_commits, result['commit']], sort=True)
         df_edits = pd.concat([df_edits, result['edits']], sort=True)
@@ -301,19 +303,18 @@ def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=N
     if not df_edits.empty:
         df_edits.to_sql('edits', con, if_exists='append')
 
-    return True
-
 
 def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
-                          num_processes=os.cpu_count(), chunksize=1, exclude=None):
+                          num_processes=os.cpu_count(), chunksize=1, exclude=None, _p_commits=[]):
     git_repo = pydriller.GitRepository(repo_string)
     exclude_paths = []
     if exclude:
         with open(exclude) as f:
             exclude_paths = [x.strip() for x in f.readlines()]
 
-    args = [{'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks, 'exclude_paths': exclude_paths}
-            for commit in git_repo.get_list_commits()]
+    args = [{'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
+             'exclude_paths': exclude_paths}
+            for commit in git_repo.get_list_commits() if commit.hash not in _p_commits]
 
     con = sqlite3.connect(sqlite_db_file)
     p = Pool(num_processes)
@@ -514,15 +515,67 @@ def get_dag(db_location, time_from=None, time_to=None):
     return dag
 
 
-def mine_git_repo(repo_string, sqlite_db_file, exclude=[], num_processes=os.cpu_count(),
-                  chunksize=1, use_blocks=True):
+def mine_git_repo(repo_string, sqlite_db_file, use_blocks=True, num_processes=os.cpu_count(),
+                  chunksize=1, exclude=[]):
+
+    # if os.path.exists(sqlite_db_file):
+    #     try:
+    #         with sqlite3.connect(sqlite_db_file) as con:
+    #             prev_method, prev_repository = con.execute(
+    #                 "SELECT method, repository FROM _metadata").fetchall()[0]
+
+    #             if (prev_method == 'blocks' if use_blocks else 'lines') and \
+    #             (prev_repository == repo_string):
+    #                 p_commits = set(x[0]
+    #                     for x in con.execute("SELECT hash FROM commits").fetchall())
+    #                 c_commits = set(c.hash
+    #                     for c in pydriller.GitRepository(repo_string).get_list_commits())
+    #                 if not p_commits.issubset(c_commits):
+    #                     raise Exception("Found a database that was created with identical " +
+    #                                     "settings. However, some commits in the database are not " +
+    #                                     "in the provided git repository. Please provide a clean " +
+    #                                     "database.")
+    #                 else:
+    #                     if p_commits == c_commits:
+    #                         print("The provided database is already complete!")
+    #                         return
+    #                     else:
+    #                         print("Found a matching database on provided path. " +
+    #                                 "Skipping {} ({:.2f}%) of {} commits. {} commits remaining"
+    #                                 .format(len(p_commits), len(p_commits) / len(c_commits) * 100,
+    #                                         len(c_commits), len(c_commits) - len(p_commits)))
+    #             else:
+    #                 raise Exception("Found a database on provided path that was created with " +
+    #                                 "settings not matching the ones selected for the current " +
+    #                                 "run. A path to either no database or a database from a  " +
+    #                                 "previously paused run with identical settings is required.")
+    #     except sqlite3.OperationalError:
+    #         raise Exception("Found a database on provided path that was likely not created with " +
+    #                         "git2net. A path to either no database or a database from a " +
+    #                         "previously paused run with identical settings is required.")
+    # else:
+    #     print("Found no database on provided path. Starting from scratch.")
+    #     with sqlite3.connect(sqlite_db_file) as con:
+    #         con.execute("CREATE TABLE _metadata ('created with', 'repository', 'date', 'method')")
+    #         con.execute("""INSERT INTO _metadata ('created with', 'repository', 'date', 'method')
+    #                     VALUES (:version, :repository, :date, :method)""",
+    #                     {'version': 'git2net alpha',
+    #                      'repository': repo_string,
+    #                      'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+    #                      'method': 'blocks' if use_blocks else 'lines'})
+    #         con.commit()
+    #         p_commits = []
+
+    p_commits = []
+
     if num_processes > 1:
         process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
                               use_blocks=use_blocks, num_processes=num_processes,
-                              chunksize=chunksize, exclude=exclude)
+                              chunksize=chunksize, exclude=exclude, _p_commits=p_commits)
     else:
         process_repo_serial(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
-                            use_blocks=use_blocks, exclude=exclude)
+                            use_blocks=use_blocks, exclude=exclude, _p_commits=p_commits)
+
 
 
 if __name__ == "__main__":
@@ -537,17 +590,13 @@ if __name__ == "__main__":
         default=os.cpu_count(), type=int)
     parser.add_argument('--chunksize', help='Chunk size to be used in multiprocessing.map.',
         default=1, type=int)
-    parser.add_argument('--use-edits',
-        help='Compare added and deleted edits of code rather than lines.', dest='use_blocks',
+    parser.add_argument('--use-blocks',
+        help='Compare added and deleted blocks of code rather than lines.', dest='use_blocks',
         action='store_true')
     parser.set_defaults(parallel=True)
     parser.set_defaults(use_blocks=False)
 
     args = parser.parse_args()
-    if args.parallel:
-        process_repo_parallel(repo_string=args.repo, sqlite_db_file=args.outfile,
-                              use_blocks=args.use_blocks, num_processes=args.numprocesses,
-                              chunksize=args.chunksize, exclude=args.exclude)
-    else:
-        process_repo_serial(repo_string=args.repo, sqlite_db_file=args.outfile,
-                            use_blocks=args.use_blocks, exclude=args.exclude)
+
+    mine_git_repo(args.repo, args.outfile, exclude=args.exclude, num_processes=args.numprocesses,
+                  chunksize=args.chunksize, use_blocks=args.use_blocks)

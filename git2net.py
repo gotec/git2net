@@ -10,7 +10,6 @@ from multiprocessing import Pool
 from multiprocessing import Semaphore
 
 import pandas as pd
-import progressbar
 from tqdm import tqdm
 import numpy as np
 from scipy.stats import entropy
@@ -46,6 +45,7 @@ def get_block_length(lines, k):
         else:
             edit = False
     return block_size
+
 
 def identify_edits(deleted_lines, added_lines, use_blocks=False):
     """
@@ -145,11 +145,13 @@ def identify_edits(deleted_lines, added_lines, use_blocks=False):
 def text_entropy(text):
     return entropy([text.count(chr(i)) for i in range(256)], base=2)
 
-def extract_edits(git_repo, commit, mod, use_blocks=False):
+def extract_edits(repo_string, commit, mod, use_blocks=False):
 
     df = pd.DataFrame()
 
     path = mod.new_path
+
+    git_repo = pydriller.GitRepository(repo_string)
 
     parsed_lines = git_repo.parse_diff(mod.diff)
 
@@ -226,53 +228,55 @@ def extract_edits(git_repo, commit, mod, use_blocks=False):
     return df
 
 
-def process_commit(git_repo, commit, exclude_paths = set(), use_blocks = False):
+#def process_commit(git_repo, commit, exclude_paths = set(), use_blocks = False):
+def process_commit(args):
+    # git_repo, commit, exclude_paths, use_blocks = args
+
     df_commit = pd.DataFrame()
     df_edits = pd.DataFrame()
 
     # parse commit
     c = {}
-    c['hash'] = commit.hash
-    c['author_email'] = commit.author.email
-    c['author_name'] = commit.author.name
-    c['committer_email'] = commit.committer.email
-    c['committer_name'] = commit.committer.name
-    c['author_date'] = commit.author_date.strftime('%Y-%m-%d %H:%M:%S')
-    c['committer_date'] = commit.committer_date.strftime('%Y-%m-%d %H:%M:%S')
-    c['committer_timezone'] = commit.committer_timezone
-    c['modifications'] = len(commit.modifications)
-    c['msg_len'] = len(commit.msg)
-    c['project_name'] = commit.project_name
-    c['parents'] = ','.join(commit.parents)
-    c['merge'] = commit.merge
-    c['in_main_branch'] = commit.in_main_branch
-    c['branches'] = ','.join(commit.branches)
-
-    df_commit = pd.DataFrame(c, index=[0])
+    c['hash'] = args['commit'].hash
+    c['author_email'] = args['commit'].author.email
+    c['author_name'] = args['commit'].author.name
+    c['committer_email'] = args['commit'].committer.email
+    c['committer_name'] = args['commit'].committer.name
+    c['author_date'] = args['commit'].author_date.strftime('%Y-%m-%d %H:%M:%S')
+    c['committer_date'] = args['commit'].committer_date.strftime('%Y-%m-%d %H:%M:%S')
+    c['committer_timezone'] = args['commit'].committer_timezone
+    c['modifications'] = len(args['commit'].modifications)
+    c['msg_len'] = len(args['commit'].msg)
+    c['project_name'] = args['commit'].project_name
+    c['parents'] = ','.join(args['commit'].parents)
+    c['merge'] = args['commit'].merge
+    c['in_main_branch'] = args['commit'].in_main_branch
+    c['branches'] = ','.join(args['commit'].branches)
 
     # parse modification
-    for modification in commit.modifications:
+    for modification in args['commit'].modifications:
         exclude_file = False
         excluded_path = ''
-        for x in exclude_paths:
+        for x in args['exclude_paths']:
             if modification.new_path:
-                if modification.new_path.startswith(x+os.sep):
+                if modification.new_path.startswith(x + os.sep):
                     exclude_file = True
                     excluded_path = modification.new_path
             if not exclude_file and modification.old_path:
-                if modification.old_path.startswith(x+os.sep):
+                if modification.old_path.startswith(x + os.sep):
                     exclude_file = True
                     excluded_path = modification.old_path
         if not exclude_file:
-            df_edits = df_edits.append(
-                extract_edits(git_repo, commit, modification, use_blocks=use_blocks),
-                ignore_index=True, sort=True)
-    return df_commit, df_edits
+            df_edits = df_edits.append(extract_edits(args['repo_string'], args['commit'], modification,
+                                                     use_blocks=args['use_blocks']),
+                                       ignore_index=True, sort=True)
+
+    df_commit = pd.DataFrame(c, index=[0])
+
+    return {'commit': df_commit, 'edits': df_edits}
 
 
-
-def process_repo_serial(repo_string, exclude=None, use_blocks=False):
-
+def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=None):
     git_repo = pydriller.GitRepository(repo_string)
     exclude_paths = []
     if exclude:
@@ -285,43 +289,42 @@ def process_repo_serial(repo_string, exclude=None, use_blocks=False):
     i = 0
     commits = [c for c in git_repo.get_list_commits()]
     for commit in tqdm(commits, desc='Serial'):
-        df_1, df_2 = process_commit(git_repo, commit, exclude_paths, use_blocks=use_blocks)
-        df_commits = pd.concat([df_commits, df_1], sort=True)
-        df_edits = pd.concat([df_edits, df_2], sort=True)
-    return df_commits, df_edits
+        args = {'repo_string': repo_string, 'commit': commit, 'use_blocks': use_blocks, 'exclude_paths': exclude_paths}
+        result = process_commit(args)
+        df_commits = pd.concat([df_commits, result['commit']], sort=True)
+        df_edits = pd.concat([df_edits, result['edits']], sort=True)
 
-def process_commit_parallel(arg):
-    repo_string, commit_hash, sqlite_db_file, exclude, use_blocks = arg
+    con = sqlite3.connect(sqlite_db_file)
+    if not df_commits.empty:
+        df_commits.to_sql('commits', con, if_exists='append')
+    if not df_edits.empty:
+        df_edits.to_sql('edits', con, if_exists='append')
+
+    return True
+
+
+def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
+                          num_processes=os.cpu_count(), chunksize=1, exclude=None):
     git_repo = pydriller.GitRepository(repo_string)
-
     exclude_paths = []
     if exclude:
         with open(exclude) as f:
             exclude_paths = [x.strip() for x in f.readlines()]
 
-    df_1, df_2 = process_commit(git_repo, git_repo.get_commit(commit_hash), exclude_paths,
-                                use_blocks=use_blocks)
+    args = [{'repo_string': repo_string, 'commit': commit, 'use_blocks': use_blocks, 'exclude_paths': exclude_paths}
+            for commit in git_repo.get_list_commits()]
 
-    with Semaphore(1):
-        con = sqlite3.connect(sqlite_db_file)
-        if not df_1.empty:
-            df_1.to_sql('commits', con, if_exists='append')
-        if not df_2.empty:
-            df_2.to_sql('edits', con, if_exists='append')
-    return True
-
-
-def process_repo_parallel(repo_string, sqlite_db_file, num_processes=os.cpu_count(), exclude=None,
-                          chunksize=1, use_blocks=False):
-
-    git_repo = pydriller.GitRepository(repo_string)
-    args = [ (repo_string, c.hash, sqlite_db_file, exclude, use_blocks)
-            for c in git_repo.get_list_commits()]
-
+    con = sqlite3.connect(sqlite_db_file)
     p = Pool(num_processes)
     with tqdm(total=len(args), desc='Parallel ({0} workers)'.format(num_processes)) as pbar:
-        for i,_ in enumerate(p.imap_unordered(process_commit_parallel, args, chunksize=chunksize)):
+        for i, result in enumerate(p.imap_unordered(process_commit, args, chunksize=chunksize)):
+            print(result)
+            if not result['commit'].empty:
+                result['commit'].to_sql('commits', con, if_exists='append')
+            if not result['edits'].empty:
+                result['edits'].to_sql('edits', con, if_exists='append')
             pbar.update(1)
+
 
 def get_unified_changes(repo_string, commit_hash, filename):
     """
@@ -434,6 +437,7 @@ def get_coediting_network(db_location, time_from=None, time_to=None):
                        timestamp_format='%Y-%m-%d %H:%M:%S')
     return t
 
+
 def _get_bipartite_edges(db_location):
     con = sqlite3.connect(db_location)
 
@@ -512,18 +516,13 @@ def get_dag(db_location, time_from=None, time_to=None):
 
 def mine_git_repo(repo_string, sqlite_db_file, exclude=[], no_parallel=False,
                   num_processes=os.cpu_count(), chunksize=1, use_blocks=True):
-
     if no_parallel == False:
         process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
-                              num_processes=num_processes, exclude=exclude,
-                              chunksize=chunksize, use_blocks=use_blocks)
+                              use_blocks=use_blocks, num_processes=num_processes,
+                              chunksize=chunksize, exclude=exclude)
     else:
-        df_commits, df_edits = process_repo_serial(repo_string, exclude, use_blocks=use_blocks)
-        con = sqlite3.connect(sqlite_db_file)
-        if not df_commits.empty:
-            df_commits.to_sql('commits', con, if_exists='append')
-        if not df_edits.empty:
-            df_edits.to_sql('edits', con, if_exists='append')
+        process_repo_serial(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
+                            use_blocks=use_blocks, exclude=exclude)
 
 
 if __name__ == "__main__":
@@ -549,13 +548,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.parallel:
         process_repo_parallel(repo_string=args.repo, sqlite_db_file=args.outfile,
-                              num_processes=args.numprocesses, exclude=args.exclude,
-                              chunksize=args.chunksize, use_blocks=args.use_blocks)
+                              use_blocks=args.use_blocks, num_processes=args.numprocesses,
+                              chunksize=args.chunksize, exclude=args.exclude)
     else:
-        df_commits, df_edits = process_repo_serial(args.repo, args.exclude,
-            use_blocks=args.use_blocks)
-        con = sqlite3.connect(args.outfile)
-        if not df_commits.empty:
-            df_commits.to_sql('commits', con, if_exists='append')
-        if not df_edits.empty:
-            df_edits.to_sql('edits', con, if_exists='append')
+        process_repo_serial(repo_string=args.repo, sqlite_db_file=args.outfile,
+                            use_blocks=args.use_blocks, exclude=args.exclude)

@@ -1,5 +1,5 @@
 #%%
-import pyce
+import git2net
 import pathpy as pp
 import pandas as pd
 
@@ -11,27 +11,28 @@ from datetime import datetime
 if os.path.exists('out.db'):
   os.remove('out.db')
 
-pyce.mine_git_repo('.', 'out.db')
+git2net.mine_git_repo('.', 'out.db')
 
 
 #%% COEDITING NETWORK
-t = pyce.get_coediting_network('out.db')
+t = git2net.get_coediting_network('out.db')
 print(t)
 n = pp.Network.from_temporal_network(t)
 print(n)
 pp.visualisation.export_html(n, 'coediting_net.html', width=600, height=800)
 
 
-#%% 
-t = pyce.get_coediting_network('out.db')
+#%%
+t = git2net.get_coediting_network('out.db')
 print(t)
 
-t = pyce.get_coediting_network('out.db', time_to=datetime.strptime('2019-01-14 14:50:34', '%Y-%m-%d %H:%M:%S'))
+t = git2net.get_coediting_network('out.db', time_to=datetime.strptime('2019-01-14 14:50:34',
+                                                                      '%Y-%m-%d %H:%M:%S'))
 print(t)
 
 
 #%%
-n = pyce.get_bipartite_network('out.db')
+n = git2net.get_bipartite_network('out.db')
 print(n)
 colors = {}
 for x in n.nodes:
@@ -43,7 +44,7 @@ pp.visualisation.export_html(n, 'bipartite.html', width=600, height=800, node_co
 
 
 #%% DAG
-dag = pyce.get_dag('out.db')
+dag = git2net.get_dag('out.db')
 colors = {}
 for x in dag.nodes:
     colors[x] = 'lightblue'

@@ -145,13 +145,11 @@ def identify_edits(deleted_lines, added_lines, use_blocks=False):
 def text_entropy(text):
     return entropy([text.count(chr(i)) for i in range(256)], base=2)
 
-def extract_edits(repo_string, commit, mod, use_blocks=False):
+def extract_edits(git_repo, commit, mod, use_blocks=False):
 
     df = pd.DataFrame()
 
     path = mod.new_path
-
-    git_repo = pydriller.GitRepository(repo_string)
 
     parsed_lines = git_repo.parse_diff(mod.diff)
 
@@ -232,29 +230,32 @@ def extract_edits(repo_string, commit, mod, use_blocks=False):
 def process_commit(args):
     # git_repo, commit, exclude_paths, use_blocks = args
 
+    git_repo = pydriller.GitRepository(args['repo_string'])
+    commit = git_repo.get_commit(args['commit_hash'])
+
     df_commit = pd.DataFrame()
     df_edits = pd.DataFrame()
 
     # parse commit
     c = {}
-    c['hash'] = args['commit'].hash
-    c['author_email'] = args['commit'].author.email
-    c['author_name'] = args['commit'].author.name
-    c['committer_email'] = args['commit'].committer.email
-    c['committer_name'] = args['commit'].committer.name
-    c['author_date'] = args['commit'].author_date.strftime('%Y-%m-%d %H:%M:%S')
-    c['committer_date'] = args['commit'].committer_date.strftime('%Y-%m-%d %H:%M:%S')
-    c['committer_timezone'] = args['commit'].committer_timezone
-    c['modifications'] = len(args['commit'].modifications)
-    c['msg_len'] = len(args['commit'].msg)
-    c['project_name'] = args['commit'].project_name
-    c['parents'] = ','.join(args['commit'].parents)
-    c['merge'] = args['commit'].merge
-    c['in_main_branch'] = args['commit'].in_main_branch
-    c['branches'] = ','.join(args['commit'].branches)
+    c['hash'] = commit.hash
+    c['author_email'] = commit.author.email
+    c['author_name'] = commit.author.name
+    c['committer_email'] = commit.committer.email
+    c['committer_name'] = commit.committer.name
+    c['author_date'] = commit.author_date.strftime('%Y-%m-%d %H:%M:%S')
+    c['committer_date'] = commit.committer_date.strftime('%Y-%m-%d %H:%M:%S')
+    c['committer_timezone'] = commit.committer_timezone
+    c['modifications'] = len(commit.modifications)
+    c['msg_len'] = len(commit.msg)
+    c['project_name'] = commit.project_name
+    c['parents'] = ','.join(commit.parents)
+    c['merge'] = commit.merge
+    c['in_main_branch'] = commit.in_main_branch
+    c['branches'] = ','.join(commit.branches)
 
     # parse modification
-    for modification in args['commit'].modifications:
+    for modification in commit.modifications:
         exclude_file = False
         excluded_path = ''
         for x in args['exclude_paths']:
@@ -267,7 +268,7 @@ def process_commit(args):
                     exclude_file = True
                     excluded_path = modification.old_path
         if not exclude_file:
-            df_edits = df_edits.append(extract_edits(args['repo_string'], args['commit'], modification,
+            df_edits = df_edits.append(extract_edits(git_repo, commit, modification,
                                                      use_blocks=args['use_blocks']),
                                        ignore_index=True, sort=True)
 
@@ -289,7 +290,7 @@ def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=N
     i = 0
     commits = [c for c in git_repo.get_list_commits()]
     for commit in tqdm(commits, desc='Serial'):
-        args = {'repo_string': repo_string, 'commit': commit, 'use_blocks': use_blocks, 'exclude_paths': exclude_paths}
+        args = {'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks, 'exclude_paths': exclude_paths}
         result = process_commit(args)
         df_commits = pd.concat([df_commits, result['commit']], sort=True)
         df_edits = pd.concat([df_edits, result['edits']], sort=True)
@@ -311,18 +312,17 @@ def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
         with open(exclude) as f:
             exclude_paths = [x.strip() for x in f.readlines()]
 
-    args = [{'repo_string': repo_string, 'commit': commit, 'use_blocks': use_blocks, 'exclude_paths': exclude_paths}
+    args = [{'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks, 'exclude_paths': exclude_paths}
             for commit in git_repo.get_list_commits()]
 
     con = sqlite3.connect(sqlite_db_file)
     p = Pool(num_processes)
     with tqdm(total=len(args), desc='Parallel ({0} workers)'.format(num_processes)) as pbar:
         for i, result in enumerate(p.imap_unordered(process_commit, args, chunksize=chunksize)):
-            print(result)
-            if not result['commit'].empty:
-                result['commit'].to_sql('commits', con, if_exists='append')
-            if not result['edits'].empty:
-                result['edits'].to_sql('edits', con, if_exists='append')
+            # if not result['commit'].empty:
+            #     result['commit'].to_sql('commits', con, if_exists='append')
+            # if not result['edits'].empty:
+            #     result['edits'].to_sql('edits', con, if_exists='append')
             pbar.update(1)
 
 
@@ -514,9 +514,9 @@ def get_dag(db_location, time_from=None, time_to=None):
     return dag
 
 
-def mine_git_repo(repo_string, sqlite_db_file, exclude=[], no_parallel=False,
-                  num_processes=os.cpu_count(), chunksize=1, use_blocks=True):
-    if no_parallel == False:
+def mine_git_repo(repo_string, sqlite_db_file, exclude=[], num_processes=os.cpu_count(),
+                  chunksize=1, use_blocks=True):
+    if num_processes > 1:
         process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
                               use_blocks=use_blocks, num_processes=num_processes,
                               chunksize=chunksize, exclude=exclude)

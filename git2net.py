@@ -319,10 +319,10 @@ def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
     p = Pool(num_processes)
     with tqdm(total=len(args), desc='Parallel ({0} processes)'.format(num_processes)) as pbar:
         for i, result in enumerate(p.imap_unordered(process_commit, args, chunksize=chunksize)):
-            # if not result['commit'].empty:
-            #     result['commit'].to_sql('commits', con, if_exists='append')
-            # if not result['edits'].empty:
-            #     result['edits'].to_sql('edits', con, if_exists='append')
+            if not result['commit'].empty:
+                result['commit'].to_sql('commits', con, if_exists='append')
+            if not result['edits'].empty:
+                result['edits'].to_sql('edits', con, if_exists='append')
             pbar.update(1)
 
 

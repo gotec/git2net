@@ -317,7 +317,7 @@ def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
 
     con = sqlite3.connect(sqlite_db_file)
     p = Pool(num_processes)
-    with tqdm(total=len(args), desc='Parallel ({0} workers)'.format(num_processes)) as pbar:
+    with tqdm(total=len(args), desc='Parallel ({0} processes)'.format(num_processes)) as pbar:
         for i, result in enumerate(p.imap_unordered(process_commit, args, chunksize=chunksize)):
             # if not result['commit'].empty:
             #     result['commit'].to_sql('commits', con, if_exists='append')
@@ -532,8 +532,6 @@ if __name__ == "__main__":
     parser.add_argument('outfile', help='Path to SQLite DB file storing results.', type=str)
     parser.add_argument('--exclude', help='Exclude path prefixes in given file.', type=str,
         default=None)
-    parser.add_argument('--no-parallel', help='Do not use multi-core processing.', dest='parallel',
-        action='store_false')
     parser.add_argument('--numprocesses',
         help='Number of CPU cores used for multi-core processing. Defaults to number of CPU cores.',
         default=os.cpu_count(), type=int)

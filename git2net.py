@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 
-import logging
 import sqlite3
 import os
 import argparse
@@ -20,8 +19,8 @@ from Levenshtein import distance as lev_dist
 import datetime
 
 import pathpy as pp
+import copy
 
-logger = logging.getLogger(__name__)
 
 def get_block_length(lines, k):
     """
@@ -193,7 +192,7 @@ def extract_edits(git_repo, commit, mod, use_blocks=False):
             c['pre_commit'] = None
         else:
             try:
-                blame = git_repo.git.blame(commit.hash + '^', '--', path).split('\n')
+                blame = git_repo.git.blame(commit.hash + '^', '--', path).split('\dag')
                 blame_fields = blame[edit['pre start'] - 1].split(' ')
                 original_commit_hash = blame_fields[0].replace('^', '')
                 c['pre_commit'] = original_commit_hash
@@ -328,15 +327,96 @@ def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
                 result['edits'].to_sql('edits', con, if_exists='append')
             pbar.update(1)
 
-def extract_editing_paths(sqlite_db_file):
+def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False):
     con = sqlite3.connect(sqlite_db_file)
-    commits = pd.read_sql("SELECT * FROM commits", con)
-    edits = pd.read_sql("SELECT * FROM edits", con)
+
+    try:
+        method = con.execute("SELECT method FROM _metadata").fetchall()[0][0]
+        if method == 'blocks':
+            raise Exception("Invalid database. A database mined with 'use_blocks=False' is " +
+                            "required.")
+    except sqlite3.OperationalError:
+        raise Exception("You either provided no database or a database not created with git2net. " +
+                        "Please provide a valid datatabase mined with 'use_blocks=False'.")
+
+    commits = pd.read_sql("""SELECT hash, author_name, author_date FROM commits""", con)
+    edits = pd.read_sql("""SELECT levenshtein_dist,
+                                  mod_filename,
+                                  pre_commit,
+                                  post_commit,
+                                  pre_starting_line_num,
+                                  post_starting_line_num,
+                                  pre_len_in_lines,
+                                  post_len_in_lines
+                           FROM edits""", con)
+
+    commits.loc[:, 'hash'] = commits.hash.apply(lambda x: x[0:7] if not pd.isnull(x) else x)
+    edits.loc[:, 'pre_commit'] = edits.pre_commit.apply(lambda x: x[0:7] if not pd.isnull(x) else x)
+    edits.loc[:, 'post_commit'] = edits.post_commit.apply(
+                                    lambda x: x[0:7] if not pd.isnull(x) else x)
 
     # get a list of all files
-    for mod_filename in edits.mod_filename.unique():
-        if mod_filename == '.gitignore':
-            print(edits.loc[edits.mod_filename == mod_filename, :])
+    if filenames == False:
+        filenames = edits.mod_filename.unique()
+
+    dag = pp.DAG()
+    node_info = {}
+    node_info['colors'] = {}
+    edge_info = {}
+    edge_info['weights'] = {}
+    for filename in filenames:
+        file_edits = edits.loc[edits.mod_filename == filename, :]
+
+        file_edits = pd.merge(file_edits, commits, how='left', left_on='pre_commit',
+                                right_on='hash').drop(['pre_commit', 'hash'], axis=1)
+        file_edits.rename(columns = {'author_name':'pre_author_name',
+                                     'author_date': 'pre_author_date'}, inplace = True)
+
+        file_edits = pd.merge(file_edits, commits, how='left', left_on='post_commit',
+                                right_on='hash').drop(['post_commit', 'hash'], axis=1)
+        file_edits.rename(columns = {'author_name':'post_author_name',
+                                     'author_date': 'post_author_date'}, inplace = True)
+
+        file_edits.sort_values('post_author_date', ascending=True, inplace=True)
+
+        for _, edit in file_edits.iterrows():
+            if pd.isnull(edit.pre_author_name):
+                source = filename
+                target = filename + ' ' + 'L' + str(int(edit.post_starting_line_num)) + ' ' + \
+                         str(edit.post_author_date)
+            elif pd.isnull(edit.post_len_in_lines):
+                source = filename + ' ' + 'L' + str(int(edit.pre_starting_line_num)) + ' ' + \
+                            str(edit.pre_author_date)
+                target = None
+            else:
+                source = filename + ' ' + 'L' + str(int(edit.pre_starting_line_num)) + ' ' + \
+                            str(edit.pre_author_date)
+                target = filename + ' ' + 'L' + str(int(edit.post_starting_line_num)) + ' ' + \
+                            str(edit.post_author_date)
+
+            dag.add_edge(source, target)
+            edge_info['weights'][(source, target)] = edit.levenshtein_dist
+
+        for node in dag.nodes:
+            if node == filename:
+                node_info['colors'][node] = 'gray'
+            elif pd.isnull(node):
+                node_info['colors'][node] = '#A8322D' # red
+            elif (filename in dag.predecessors[node]) and (len(dag.successors[node]) == 0):
+                node_info['colors'][node] = '#5B4E77' # purple
+            elif filename in dag.predecessors[node]:
+                node_info['colors'][node] = '#218380' # green
+            elif len(dag.successors[node]) == 0:
+                node_info['colors'][node] = '#2E5EAA' # blue
+            else:
+                node_info['colors'][node] = '#73D2DE' # light blue
+
+        if not with_start:
+            dag.remove_node(filename)
+
+    paths = pp.path_extraction.paths_from_dag(dag)
+
+    return dag, paths, node_info, edge_info
 
 # THIS FUNCTIONS NEEDS TO BE REWRITTEN BASED ON THE NEW RESULTS
 
@@ -356,7 +436,7 @@ def extract_editing_paths(sqlite_db_file):
 
 #             pre_to_post, edits = identify_edits(deleted_lines, added_lines)
 
-#             post_source_code = modification.source_code.split('\n')
+#             post_source_code = modification.source_code.split('\dag')
 
 #             max_line_no = max(max(deleted_lines.keys()),
 #                               max(added_lines.keys()),
@@ -474,11 +554,11 @@ def extract_editing_paths(sqlite_db_file):
 #     if time_to == None:
 #         time_to = max(bipartite_edges.time)
 
-#     n = pp.Network()
+#     dag = pp.Network()
 #     for idx, edge in bipartite_edges.iterrows():
 #         if (edge.time >= time_from) and (edge.time <= time_to):
-#             n.add_edge(edge.source, edge.target)
-#     return n
+#             dag.add_edge(edge.source, edge.target)
+#     return dag
 
 
 # def _get_dag_edges(db_location):

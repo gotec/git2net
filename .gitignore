@@ -1,4 +1,4 @@
 *.db
 .vscode/settings.json
 *.db-journal
-*.cpython-36.pyc
+*.pyc

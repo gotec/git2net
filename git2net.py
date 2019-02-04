@@ -159,70 +159,72 @@ def extract_edits(git_repo, commit, mod, use_blocks=False):
 
     pre_to_post, edits = identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
 
-    try:
-        blame = git_repo.git.blame(commit.hash + '^', '--', path).split('\n')
-        for _, edit in edits.iterrows():
-            c = {}
-            c['mod_filename'] = mod.filename
-            c['mod_new_path'] = path
-            c['mod_old_path'] = mod.old_path
-            c['post_commit'] = commit.hash
-            c['mod_added'] = mod.added
-            c['mod_removed'] = mod.removed
-            c['mod_cyclomatic_complexity'] = mod.complexity
-            c['mod_loc'] = mod.nloc
-            c['mod_token_count'] = mod.token_count
+    for _, edit in edits.iterrows():
+        c = {}
+        c['mod_filename'] = mod.filename
+        c['mod_new_path'] = path
+        c['mod_old_path'] = mod.old_path
+        c['post_commit'] = commit.hash
+        c['mod_added'] = mod.added
+        c['mod_removed'] = mod.removed
+        c['mod_cyclomatic_complexity'] = mod.complexity
+        c['mod_loc'] = mod.nloc
+        c['mod_token_count'] = mod.token_count
 
-            deleted_block = []
-            for i in range(edit['pre start'],
-                            edit['pre start'] + edit['number of deleted lines']):
-                deleted_block.append(deleted_lines[i])
+        deleted_block = []
+        for i in range(edit['pre start'],
+                        edit['pre start'] + edit['number of deleted lines']):
+            deleted_block.append(deleted_lines[i])
 
-            added_block = []
-            for i in range(edit['post start'],
-                            edit['post start'] + edit['number of added lines']):
-                added_block.append(added_lines[i])
+        added_block = []
+        for i in range(edit['post start'],
+                        edit['post start'] + edit['number of added lines']):
+            added_block.append(added_lines[i])
 
-            deleted_block = ' '.join(deleted_block)
-            added_block = ' '.join(added_block)
+        deleted_block = ' '.join(deleted_block)
+        added_block = ' '.join(added_block)
 
-            c['pre_starting_line_num'] = edit['pre start']
-            if edit['number of deleted lines'] == 0:
-                c['pre_len_in_lines'] = None
-                c['pre_len_in_chars'] = None
-                c['pre_entropy'] = None
-                c['pre_commit'] = None
-            else:
+        c['pre_starting_line_num'] = edit['pre start']
+
+        if edit['number of deleted lines'] == 0:
+            c['pre_len_in_lines'] = None
+            c['pre_len_in_chars'] = None
+            c['pre_entropy'] = None
+            c['pre_commit'] = None
+        else:
+            try:
+                blame = git_repo.git.blame(commit.hash + '^', '--', path).split('\n')
                 blame_fields = blame[edit['pre start'] - 1].split(' ')
                 original_commit_hash = blame_fields[0].replace('^', '')
                 c['pre_commit'] = original_commit_hash
-                c['pre_len_in_lines'] = edit['number of deleted lines']
-                c['pre_len_in_chars'] = len(deleted_block)
-                if len(deleted_block) > 0:
-                    c['pre_entropy'] = text_entropy(deleted_block)
-                else:
-                    c['pre_entropy'] = None
-
-            c['post_starting_line_num'] = edit['post start']
-            if edit['number of added lines'] == 0:
-                c['post_len_in_lines'] = None
-                c['post_len_in_chars'] = None
-                c['post_entropy'] = None
-
+            except GitCommandError:
+                # in this case, the file does not exist in the previous commit
+                # thus, is created for the first time
+                c['pre_commit'] = None
+            c['pre_len_in_lines'] = edit['number of deleted lines']
+            c['pre_len_in_chars'] = len(deleted_block)
+            if len(deleted_block) > 0:
+                c['pre_entropy'] = text_entropy(deleted_block)
             else:
-                c['post_len_in_lines'] = edit['number of added lines']
-                c['post_len_in_chars'] = len(added_block)
-                if len(added_block) > 0:
-                    c['post_entropy'] = text_entropy(added_block)
-                    c['levenshtein_dist'] = lev_dist(deleted_block, added_block)
-                else:
-                    c['post_entropy'] = None
-                    c['levenshtein_dist'] = None
+                c['pre_entropy'] = None
 
-            df = df.append(c, ignore_index=True, sort=False)
-    except GitCommandError:
-        logger.debug("Could not found file %s in commit %s. Probably a double rename!",
-                     mod.filename, commit.hash)
+        c['post_starting_line_num'] = edit['post start']
+        if edit['number of added lines'] == 0:
+            c['post_len_in_lines'] = None
+            c['post_len_in_chars'] = None
+            c['post_entropy'] = None
+
+        else:
+            c['post_len_in_lines'] = edit['number of added lines']
+            c['post_len_in_chars'] = len(added_block)
+            if len(added_block) > 0:
+                c['post_entropy'] = text_entropy(added_block)
+                c['levenshtein_dist'] = lev_dist(deleted_block, added_block)
+            else:
+                c['post_entropy'] = None
+                c['levenshtein_dist'] = None
+
+        df = df.append(c, ignore_index=True, sort=False)
 
     return df
 
@@ -325,6 +327,16 @@ def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
             if not result['edits'].empty:
                 result['edits'].to_sql('edits', con, if_exists='append')
             pbar.update(1)
+
+def extract_editing_paths(sqlite_db_file):
+    con = sqlite3.connect(sqlite_db_file)
+    commits = pd.read_sql("SELECT * FROM commits", con)
+    edits = pd.read_sql("SELECT * FROM edits", con)
+
+    # get a list of all files
+    for mod_filename in edits.mod_filename.unique():
+        if mod_filename == '.gitignore':
+            print(edits.loc[edits.mod_filename == mod_filename, :])
 
 # THIS FUNCTIONS NEEDS TO BE REWRITTEN BASED ON THE NEW RESULTS
 

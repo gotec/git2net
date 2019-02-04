@@ -11,16 +11,7 @@ import git2net
 
 db_path = 'out.db'
 
-# if os.path.exists(db_path):
-#     os.remove(db_path)
+if os.path.exists(db_path):
+    os.remove(db_path)
 
-git2net.mine_git_repo('../igraph', db_path, num_processes=8, chunksize=1)
-
-#%%
-with open('out.db') as f:
-    print(f)
-
-
-#%%
-
-#%%
+git2net.mine_git_repo('.', db_path, num_processes=8, chunksize=1, use_blocks=False)

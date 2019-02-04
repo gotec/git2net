@@ -10,7 +10,7 @@ from multiprocessing import Pool
 from multiprocessing import Semaphore
 
 import pandas as pd
-from tqdm import tqdm
+from tqdm import tqdm #add .auto after tqdm
 import numpy as np
 from scipy.stats import entropy
 
@@ -326,196 +326,197 @@ def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
                 result['edits'].to_sql('edits', con, if_exists='append')
             pbar.update(1)
 
+# THIS FUNCTIONS NEEDS TO BE REWRITTEN BASED ON THE NEW RESULTS
 
-def get_unified_changes(repo_string, commit_hash, filename):
-    """
-    Returns dataframe with github-like unified diff representation of the content of a file before
-    and after a commit for a given git repository, commit hash and filename.
-    """
-    git_repo = pydriller.GitRepository(repo_string)
-    commit = git_repo.get_commit(commit_hash)
-    for modification in commit.modifications:
-        if modification.filename == filename:
-            parsed_lines = git_repo.parse_diff(modification.diff)
+# def get_unified_changes(repo_string, commit_hash, filename):
+#     """
+#     Returns dataframe with github-like unified diff representation of the content of a file before
+#     and after a commit for a given git repository, commit hash and filename.
+#     """
+#     git_repo = pydriller.GitRepository(repo_string)
+#     commit = git_repo.get_commit(commit_hash)
+#     for modification in commit.modifications:
+#         if modification.filename == filename:
+#             parsed_lines = git_repo.parse_diff(modification.diff)
 
-            deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
-            added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
+#             deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
+#             added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
-            pre_to_post, edits = identify_edits(deleted_lines, added_lines)
+#             pre_to_post, edits = identify_edits(deleted_lines, added_lines)
 
-            post_source_code = modification.source_code.split('\n')
+#             post_source_code = modification.source_code.split('\n')
 
-            max_line_no = max(max(deleted_lines.keys()),
-                              max(added_lines.keys()),
-                              len(post_source_code))
+#             max_line_no = max(max(deleted_lines.keys()),
+#                               max(added_lines.keys()),
+#                               len(post_source_code))
 
-            pre = []
-            post = []
-            action = []
-            code = []
+#             pre = []
+#             post = []
+#             action = []
+#             code = []
 
-            pre = 1
-            post = 1
-            while max(pre, post) < max_line_no:
-                if pre in edits.keys():
-                    cur = pre
-                    for i in range(edits[cur][0]):
-                        pre.append(pre)
-                        post.append(None)
-                        action.append('-')
-                        code.append(deleted_lines[pre])
-                        pre += 1
-                    for i in range(edits[cur][2]):
-                        pre.append(None)
-                        post.append(post)
-                        action.append('+')
-                        code.append(added_lines[post])
-                        post += 1
-                else:
-                    if pre in pre_to_post.keys():
-                        # if pre is not in the dictionary nothing has changed
-                        if post < pre_to_post[pre]:
-                            # a edit has been added
-                            for i in range(pre_to_post[pre] - post):
-                                pre.append(None)
-                                post.append(post)
-                                action.append('+')
-                                code.append(added_lines[post])
-                                post += 1
+#             pre = 1
+#             post = 1
+#             while max(pre, post) < max_line_no:
+#                 if pre in edits.keys():
+#                     cur = pre
+#                     for i in range(edits[cur][0]):
+#                         pre.append(pre)
+#                         post.append(None)
+#                         action.append('-')
+#                         code.append(deleted_lines[pre])
+#                         pre += 1
+#                     for i in range(edits[cur][2]):
+#                         pre.append(None)
+#                         post.append(post)
+#                         action.append('+')
+#                         code.append(added_lines[post])
+#                         post += 1
+#                 else:
+#                     if pre in pre_to_post.keys():
+#                         # if pre is not in the dictionary nothing has changed
+#                         if post < pre_to_post[pre]:
+#                             # a edit has been added
+#                             for i in range(pre_to_post[pre] - post):
+#                                 pre.append(None)
+#                                 post.append(post)
+#                                 action.append('+')
+#                                 code.append(added_lines[post])
+#                                 post += 1
 
-                    pre.append(pre)
-                    post.append(post)
-                    action.append(None)
-                    code.append(post_source_code[post - 1]) # minus one as list starts from 0
-                    pre += 1
-                    post += 1
+#                     pre.append(pre)
+#                     post.append(post)
+#                     action.append(None)
+#                     code.append(post_source_code[post - 1]) # minus one as list starts from 0
+#                     pre += 1
+#                     post += 1
 
-    return pd.DataFrame({'pre': pre, 'post': post, 'action': action, 'code': code})
-
-
-def _get_tedges(db_location):
-    con = sqlite3.connect(db_location)
-
-    tedges = pd.read_sql("""SELECT x.author_pre as source,
-                                   substr(x.pre_commit, 1, 8) as pre_commit,
-                                   c_post.author_email AS target,
-                                   substr(x.post_commit, 1, 8) AS post_commit,
-                                   c_post.committer_date as time,
-                                   x.levenshtein_dist as levenshtein_dist
-                            FROM (
-                                   SELECT c_pre.author_email AS author_pre,
-                                          edits.pre_commit,
-                                          edits.post_commit,
-                                          edits.levenshtein_dist
-                                   FROM edits
-                                   JOIN commits AS c_pre
-                                   ON substr(c_pre.hash, 1, 8) == edits.pre_commit) AS x
-                                   JOIN commits AS c_post
-                                   ON substr(c_post.hash, 1, 8) == substr(x.post_commit, 1, 8
-                                 )
-                            WHERE source != target""", con)
-
-    tedges.loc[:,'time'] = pd.to_datetime(tedges.time)
-
-    return tedges
+#     return pd.DataFrame({'pre': pre, 'post': post, 'action': action, 'code': code})
 
 
-def get_coediting_network(db_location, time_from=None, time_to=None):
-    tedges = _get_tedges(db_location)
+# def _get_tedges(db_location):
+#     con = sqlite3.connect(db_location)
 
-    if time_from == None:
-        time_from = min(tedges.time)
-    if time_to == None:
-        time_to = max(tedges.time)
+#     tedges = pd.read_sql("""SELECT x.author_pre as source,
+#                                    substr(x.pre_commit, 1, 8) as pre_commit,
+#                                    c_post.author_email AS target,
+#                                    substr(x.post_commit, 1, 8) AS post_commit,
+#                                    c_post.committer_date as time,
+#                                    x.levenshtein_dist as levenshtein_dist
+#                             FROM (
+#                                    SELECT c_pre.author_email AS author_pre,
+#                                           edits.pre_commit,
+#                                           edits.post_commit,
+#                                           edits.levenshtein_dist
+#                                    FROM edits
+#                                    JOIN commits AS c_pre
+#                                    ON substr(c_pre.hash, 1, 8) == edits.pre_commit) AS x
+#                                    JOIN commits AS c_post
+#                                    ON substr(c_post.hash, 1, 8) == substr(x.post_commit, 1, 8
+#                                  )
+#                             WHERE source != target""", con)
 
-    t = pp.TemporalNetwork()
-    for _, edge in tedges.iterrows():
-        if (edge.time >= time_from) and (edge.time <= time_to):
-            t.add_edge(edge.source,
-                       edge.target,
-                       edge.time.strftime('%Y-%m-%d %H:%M:%S'),
-                       directed=True,
-                       timestamp_format='%Y-%m-%d %H:%M:%S')
-    return t
+#     tedges.loc[:,'time'] = pd.to_datetime(tedges.time)
 
-
-def _get_bipartite_edges(db_location):
-    con = sqlite3.connect(db_location)
-
-    bipartite_edges = pd.read_sql("""SELECT DISTINCT mod_filename AS target,
-                                            commits.author_name AS source,
-                                            commits.committer_date AS time
-                                     FROM edits
-                                     JOIN commits ON edits.post_commit == commits.hash""", con)
-
-    bipartite_edges.loc[:,'time'] = pd.to_datetime(bipartite_edges.time)
-
-    return bipartite_edges
+#     return tedges
 
 
-def get_bipartite_network(db_location, time_from=None, time_to=None):
-    bipartite_edges = _get_bipartite_edges(db_location)
+# def get_coediting_network(db_location, time_from=None, time_to=None):
+#     tedges = _get_tedges(db_location)
 
-    if time_from == None:
-        time_from = min(bipartite_edges.time)
-    if time_to == None:
-        time_to = max(bipartite_edges.time)
+#     if time_from == None:
+#         time_from = min(tedges.time)
+#     if time_to == None:
+#         time_to = max(tedges.time)
 
-    n = pp.Network()
-    for idx, edge in bipartite_edges.iterrows():
-        if (edge.time >= time_from) and (edge.time <= time_to):
-            n.add_edge(edge.source, edge.target)
-    return n
-
-
-def _get_dag_edges(db_location):
-    con = sqlite3.connect(db_location)
-
-    dag_edges = pd.read_sql("""SELECT DISTINCT x.author_pre||","||substr(x.pre_commit, 1, 8)
-                                        AS source,
-                                      c_post.author_email||","|| substr(x.post_commit, 1, 8)
-                                        AS target,
-                                      c_post.committer_date AS time
-                               FROM (
-                                      SELECT c_pre.author_email AS author_pre,
-                                             edits.pre_commit,
-                                             edits.post_commit,
-                                             edits.levenshtein_dist
-                                      FROM edits
-                                      JOIN commits AS c_pre
-                                      ON substr(c_pre.hash, 1, 8) == edits.pre_commit
-                                    ) AS x
-                                JOIN (
-                                       SELECT *
-                                       FROM commits
-                                     ) AS c_post
-                                ON substr(c_post.hash, 1, 8) == substr(x.post_commit, 1, 8)
-                                WHERE x.author_pre != c_post.author_email""", con)
-
-    dag_edges.loc[:,'time'] = pd.to_datetime(dag_edges.time)
-
-    return dag_edges
+#     t = pp.TemporalNetwork()
+#     for _, edge in tedges.iterrows():
+#         if (edge.time >= time_from) and (edge.time <= time_to):
+#             t.add_edge(edge.source,
+#                        edge.target,
+#                        edge.time.strftime('%Y-%m-%d %H:%M:%S'),
+#                        directed=True,
+#                        timestamp_format='%Y-%m-%d %H:%M:%S')
+#     return t
 
 
-def get_dag(db_location, time_from=None, time_to=None):
-    dag_edges = _get_dag_edges(db_location)
+# def _get_bipartite_edges(db_location):
+#     con = sqlite3.connect(db_location)
 
-    if time_from == None:
-        time_from = min(dag_edges.time)
-    if time_to == None:
-        time_to = max(dag_edges.time)
+#     bipartite_edges = pd.read_sql("""SELECT DISTINCT mod_filename AS target,
+#                                             commits.author_name AS source,
+#                                             commits.committer_date AS time
+#                                      FROM edits
+#                                      JOIN commits ON edits.post_commit == commits.hash""", con)
 
-    dag = pp.DAG()
-    for _, edge in dag_edges.iterrows():
-        if (edge.time >= time_from) and (edge.time <= time_to):
-            dag.add_edge(edge.source, edge.target)
+#     bipartite_edges.loc[:,'time'] = pd.to_datetime(bipartite_edges.time)
 
-    dag.topsort()
-
-    return dag
+#     return bipartite_edges
 
 
-def mine_git_repo(repo_string, sqlite_db_file, use_blocks=True, num_processes=os.cpu_count(),
+# def get_bipartite_network(db_location, time_from=None, time_to=None):
+#     bipartite_edges = _get_bipartite_edges(db_location)
+
+#     if time_from == None:
+#         time_from = min(bipartite_edges.time)
+#     if time_to == None:
+#         time_to = max(bipartite_edges.time)
+
+#     n = pp.Network()
+#     for idx, edge in bipartite_edges.iterrows():
+#         if (edge.time >= time_from) and (edge.time <= time_to):
+#             n.add_edge(edge.source, edge.target)
+#     return n
+
+
+# def _get_dag_edges(db_location):
+#     con = sqlite3.connect(db_location)
+
+#     dag_edges = pd.read_sql("""SELECT DISTINCT x.author_pre||","||substr(x.pre_commit, 1, 8)
+#                                         AS source,
+#                                       c_post.author_email||","|| substr(x.post_commit, 1, 8)
+#                                         AS target,
+#                                       c_post.committer_date AS time
+#                                FROM (
+#                                       SELECT c_pre.author_email AS author_pre,
+#                                              edits.pre_commit,
+#                                              edits.post_commit,
+#                                              edits.levenshtein_dist
+#                                       FROM edits
+#                                       JOIN commits AS c_pre
+#                                       ON substr(c_pre.hash, 1, 8) == edits.pre_commit
+#                                     ) AS x
+#                                 JOIN (
+#                                        SELECT *
+#                                        FROM commits
+#                                      ) AS c_post
+#                                 ON substr(c_post.hash, 1, 8) == substr(x.post_commit, 1, 8)
+#                                 WHERE x.author_pre != c_post.author_email""", con)
+
+#     dag_edges.loc[:,'time'] = pd.to_datetime(dag_edges.time)
+
+#     return dag_edges
+
+
+# def get_dag(db_location, time_from=None, time_to=None):
+#     dag_edges = _get_dag_edges(db_location)
+
+#     if time_from == None:
+#         time_from = min(dag_edges.time)
+#     if time_to == None:
+#         time_to = max(dag_edges.time)
+
+#     dag = pp.DAG()
+#     for _, edge in dag_edges.iterrows():
+#         if (edge.time >= time_from) and (edge.time <= time_to):
+#             dag.add_edge(edge.source, edge.target)
+
+#     dag.topsort()
+
+#     return dag
+
+
+def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False, num_processes=os.cpu_count(),
                   chunksize=1, exclude=[]):
 
     if os.path.exists(sqlite_db_file):
@@ -591,7 +592,6 @@ if __name__ == "__main__":
     parser.add_argument('--use-blocks',
         help='Compare added and deleted blocks of code rather than lines.', dest='use_blocks',
         action='store_true')
-    parser.set_defaults(parallel=True)
     parser.set_defaults(use_blocks=False)
 
     args = parser.parse_args()

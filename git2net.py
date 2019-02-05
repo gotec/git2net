@@ -172,12 +172,12 @@ def extract_edits(git_repo, commit, mod, use_blocks=False):
 
         deleted_block = []
         for i in range(edit['pre start'],
-                        edit['pre start'] + edit['number of deleted lines']):
+                       edit['pre start'] + edit['number of deleted lines']):
             deleted_block.append(deleted_lines[i])
 
         added_block = []
         for i in range(edit['post start'],
-                        edit['post start'] + edit['number of added lines']):
+                       edit['post start'] + edit['number of added lines']):
             added_block.append(added_lines[i])
 
         deleted_block = ' '.join(deleted_block)
@@ -235,7 +235,6 @@ def process_commit(args):
     git_repo = pydriller.GitRepository(args['repo_string'])
     commit = git_repo.get_commit(args['commit_hash'])
 
-    df_commit = pd.DataFrame()
     df_edits = pd.DataFrame()
 
     # parse commit
@@ -262,7 +261,7 @@ def process_commit(args):
         excluded_path = ''
         for x in args['exclude_paths']:
             if modification.new_path:
-                if modification.new_path.startswith(x + os.sep):
+                if modification.new_path.startswith(x + os.sep) or (modification.new_path == x):
                     exclude_file = True
                     excluded_path = modification.new_path
             if not exclude_file and modification.old_path:
@@ -270,9 +269,32 @@ def process_commit(args):
                     exclude_file = True
                     excluded_path = modification.old_path
         if not exclude_file:
-            df_edits = df_edits.append(extract_edits(git_repo, commit, modification,
-                                                     use_blocks=args['use_blocks']),
-                                       ignore_index=True, sort=True)
+            if modification.diff == '':
+                e = {}
+                e['mod_filename'] = modification.filename
+                e['mod_new_path'] = modification.new_path
+                e['mod_old_path'] = modification.old_path
+                e['pre_commit'] = None
+                e['post_commit'] = commit.hash
+                e['mod_added'] = modification.added
+                e['mod_removed'] = modification.removed
+                e['mod_cyclomatic_complexity'] = modification.complexity
+                e['mod_loc'] = modification.nloc
+                e['mod_token_count'] = modification.token_count
+                e['pre_starting_line_num'] = None
+                e['pre_len_in_lines'] = None
+                e['pre_len_in_chars'] = None
+                e['pre_entropy'] = None
+                e['post_starting_line_num'] = None
+                e['post_len_in_lines'] = None
+                e['post_len_in_chars'] = None
+                e['post_entropy'] = None
+                e['levenshtein_dist'] = None
+                df_edits = df_edits.append(e, ignore_index=True, sort=True)
+            else:
+                df_edits = df_edits.append(extract_edits(git_repo, commit, modification,
+                                                        use_blocks=args['use_blocks']),
+                                        ignore_index=True, sort=True)
 
     df_commit = pd.DataFrame(c, index=[0])
 
@@ -364,6 +386,8 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False):
     node_info = {}
     node_info['colors'] = {}
     node_info['authors'] = {}
+    node_info['filenames'] = {}
+    node_info['edit_distance'] = {}
     edge_info = {}
     edge_info['weights'] = {}
     for filename in filenames:
@@ -389,7 +413,8 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False):
             elif pd.isnull(edit.post_len_in_lines):
                 source = filename + ' ' + 'L' + str(int(edit.pre_starting_line_num)) + ' ' + \
                             str(edit.pre_author_date) + ' ' + edit.pre_author_name
-                target = 'deleted' + ' ' + edit.post_author_name
+                target = 'deleted line ' + 'L' + str(int(edit.pre_starting_line_num)) + ' ' + \
+                            str(edit.post_author_date) + ' ' + edit.post_author_name
             else:
                 source = filename + ' ' + 'L' + str(int(edit.pre_starting_line_num)) + ' ' + \
                             str(edit.pre_author_date) + ' ' + edit.pre_author_name
@@ -399,12 +424,15 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False):
             dag.add_edge(source, target)
             node_info['authors'][source] = edit.pre_author_name
             node_info['authors'][target] = edit.post_author_name
+            node_info['filenames'][source] = filename
+            node_info['filenames'][target] = filename
+            node_info['edit_distance'][target] = edit.levenshtein_dist
             edge_info['weights'][(source, target)] = edit.levenshtein_dist
 
         for node in dag.nodes:
             if node == filename:
                 node_info['colors'][node] = 'gray'
-            elif pd.isnull(node):
+            elif node.startswith('deleted line'):
                 node_info['colors'][node] = '#A8322D' # red
             elif (filename in dag.predecessors[node]) and (len(dag.successors[node]) == 0):
                 node_info['colors'][node] = '#5B4E77' # purple

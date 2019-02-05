@@ -192,7 +192,7 @@ def extract_edits(git_repo, commit, mod, use_blocks=False):
             c['pre_commit'] = None
         else:
             try:
-                blame = git_repo.git.blame(commit.hash + '^', '--', path).split('\dag')
+                blame = git_repo.git.blame(commit.hash + '^', '--', path).split('\n')
                 blame_fields = blame[edit['pre start'] - 1].split(' ')
                 original_commit_hash = blame_fields[0].replace('^', '')
                 c['pre_commit'] = original_commit_hash
@@ -319,8 +319,9 @@ def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
 
     con = sqlite3.connect(sqlite_db_file)
     p = Pool(num_processes)
+
     with tqdm(total=len(args), desc='Parallel ({0} processes)'.format(num_processes)) as pbar:
-        for i, result in enumerate(p.imap_unordered(process_commit, args, chunksize=chunksize)):
+        for _, result in enumerate(p.imap_unordered(process_commit, args, chunksize=chunksize)):
             if not result['commit'].empty:
                 result['commit'].to_sql('commits', con, if_exists='append')
             if not result['edits'].empty:
@@ -362,6 +363,7 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False):
     dag = pp.DAG()
     node_info = {}
     node_info['colors'] = {}
+    node_info['authors'] = {}
     edge_info = {}
     edge_info['weights'] = {}
     for filename in filenames:
@@ -383,18 +385,20 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False):
             if pd.isnull(edit.pre_author_name):
                 source = filename
                 target = filename + ' ' + 'L' + str(int(edit.post_starting_line_num)) + ' ' + \
-                         str(edit.post_author_date)
+                         str(edit.post_author_date) + ' ' + edit.post_author_name
             elif pd.isnull(edit.post_len_in_lines):
                 source = filename + ' ' + 'L' + str(int(edit.pre_starting_line_num)) + ' ' + \
-                            str(edit.pre_author_date)
-                target = None
+                            str(edit.pre_author_date) + ' ' + edit.pre_author_name
+                target = 'deleted' + ' ' + edit.post_author_name
             else:
                 source = filename + ' ' + 'L' + str(int(edit.pre_starting_line_num)) + ' ' + \
-                            str(edit.pre_author_date)
+                            str(edit.pre_author_date) + ' ' + edit.pre_author_name
                 target = filename + ' ' + 'L' + str(int(edit.post_starting_line_num)) + ' ' + \
-                            str(edit.post_author_date)
+                            str(edit.post_author_date) + ' ' + edit.post_author_name
 
             dag.add_edge(source, target)
+            node_info['authors'][source] = edit.pre_author_name
+            node_info['authors'][target] = edit.post_author_name
             edge_info['weights'][(source, target)] = edit.levenshtein_dist
 
         for node in dag.nodes:
@@ -418,73 +422,74 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False):
 
     return dag, paths, node_info, edge_info
 
+
+def get_unified_changes(repo_string, commit_hash, filename):
+    """
+    Returns dataframe with github-like unified diff representation of the content of a file before
+    and after a commit for a given git repository, commit hash and filename.
+    """
+    git_repo = pydriller.GitRepository(repo_string)
+    commit = git_repo.get_commit(commit_hash)
+    for modification in commit.modifications:
+        if modification.filename == filename:
+            parsed_lines = git_repo.parse_diff(modification.diff)
+
+            deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
+            added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
+
+            pre_to_post, edits = identify_edits(deleted_lines, added_lines)
+
+            post_source_code = modification.source_code.split('\n')
+
+            max_line_no = max(max(deleted_lines.keys()),
+                              max(added_lines.keys()),
+                              len(post_source_code))
+
+            pre = []
+            post = []
+            action = []
+            code = []
+
+            pre = 1
+            post = 1
+            while max(pre, post) < max_line_no:
+                if pre in edits.keys():
+                    cur = pre
+                    for i in range(edits[cur][0]):
+                        pre.append(pre)
+                        post.append(None)
+                        action.append('-')
+                        code.append(deleted_lines[pre])
+                        pre += 1
+                    for i in range(edits[cur][2]):
+                        pre.append(None)
+                        post.append(post)
+                        action.append('+')
+                        code.append(added_lines[post])
+                        post += 1
+                else:
+                    if pre in pre_to_post.keys():
+                        # if pre is not in the dictionary nothing has changed
+                        if post < pre_to_post[pre]:
+                            # a edit has been added
+                            for i in range(pre_to_post[pre] - post):
+                                pre.append(None)
+                                post.append(post)
+                                action.append('+')
+                                code.append(added_lines[post])
+                                post += 1
+
+                    pre.append(pre)
+                    post.append(post)
+                    action.append(None)
+                    code.append(post_source_code[post - 1]) # minus one as list starts from 0
+                    pre += 1
+                    post += 1
+
+    return pd.DataFrame({'pre': pre, 'post': post, 'action': action, 'code': code})
+
+
 # THIS FUNCTIONS NEEDS TO BE REWRITTEN BASED ON THE NEW RESULTS
-
-# def get_unified_changes(repo_string, commit_hash, filename):
-#     """
-#     Returns dataframe with github-like unified diff representation of the content of a file before
-#     and after a commit for a given git repository, commit hash and filename.
-#     """
-#     git_repo = pydriller.GitRepository(repo_string)
-#     commit = git_repo.get_commit(commit_hash)
-#     for modification in commit.modifications:
-#         if modification.filename == filename:
-#             parsed_lines = git_repo.parse_diff(modification.diff)
-
-#             deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
-#             added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
-
-#             pre_to_post, edits = identify_edits(deleted_lines, added_lines)
-
-#             post_source_code = modification.source_code.split('\dag')
-
-#             max_line_no = max(max(deleted_lines.keys()),
-#                               max(added_lines.keys()),
-#                               len(post_source_code))
-
-#             pre = []
-#             post = []
-#             action = []
-#             code = []
-
-#             pre = 1
-#             post = 1
-#             while max(pre, post) < max_line_no:
-#                 if pre in edits.keys():
-#                     cur = pre
-#                     for i in range(edits[cur][0]):
-#                         pre.append(pre)
-#                         post.append(None)
-#                         action.append('-')
-#                         code.append(deleted_lines[pre])
-#                         pre += 1
-#                     for i in range(edits[cur][2]):
-#                         pre.append(None)
-#                         post.append(post)
-#                         action.append('+')
-#                         code.append(added_lines[post])
-#                         post += 1
-#                 else:
-#                     if pre in pre_to_post.keys():
-#                         # if pre is not in the dictionary nothing has changed
-#                         if post < pre_to_post[pre]:
-#                             # a edit has been added
-#                             for i in range(pre_to_post[pre] - post):
-#                                 pre.append(None)
-#                                 post.append(post)
-#                                 action.append('+')
-#                                 code.append(added_lines[post])
-#                                 post += 1
-
-#                     pre.append(pre)
-#                     post.append(post)
-#                     action.append(None)
-#                     code.append(post_source_code[post - 1]) # minus one as list starts from 0
-#                     pre += 1
-#                     post += 1
-
-#     return pd.DataFrame({'pre': pre, 'post': post, 'action': action, 'code': code})
-
 
 # def _get_tedges(db_location):
 #     con = sqlite3.connect(db_location)

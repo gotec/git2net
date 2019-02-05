@@ -13,10 +13,9 @@ import numpy as np
 
 sqlite_db_file = 'out.db'
 
-dag, paths, node_info, edge_info = git2net.extract_editing_paths(sqlite_db_file, with_start=False,
-                                    filenames=['test_git2net.py'])
+dag, paths, node_info, edge_info = git2net.extract_editing_paths(sqlite_db_file, with_start=True)
 
-pp.visualisation.export_html(dag, 'out.html', width=1500, height=1500, node_color=node_info['colors'])
+pp.visualisation.plot(dag, width=1500, height=1500, node_color=node_info['colors'])
 
 #%%
 print(paths.summary())
@@ -36,6 +35,15 @@ df.replace('#5B4E77', 'initial and final', inplace=True)
 df.replace('giona', 'Giona Casiraghi', inplace=True)
 df.replace('fschweitzer-ETHZ', 'Frank Schweitzer', inplace=True)
 df.replace('eliassi', 'Tina Eliassi-Rad', inplace=True)
+df
+
+#%%
+import sqlite3
+con = sqlite3.connect(sqlite_db_file)
+path = con.execute("SELECT repository FROM _metadata").fetchall()[0][0]
+dag, _ = git2net.identify_file_renaming(path)
+dag
+
 
 #%%
 file_info_count = {}
@@ -107,5 +115,8 @@ for filename in file_info_dist.keys():
 
 #%%
 
+
+#%%
+int(float('20.0'))
 
 #%%

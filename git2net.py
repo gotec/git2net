@@ -75,8 +75,8 @@ def identify_edits(deleted_lines, added_lines, use_blocks=False):
     edits = pd.DataFrame()
 
     # line numbers of lines before the first addition or deletion do not change
-    pre = min(min_added, min_deleted)
-    post = min(min_added, min_deleted)
+    pre = min(max(min_added, 0), max(min_deleted, 0))
+    post = min(max(min_added, 0), max(min_deleted, 0))
 
     # counters used to match pre and post line number
     no_post_inc = 0
@@ -84,7 +84,7 @@ def identify_edits(deleted_lines, added_lines, use_blocks=False):
     no_pre_inc = 0
 
     # line numbers after the last addition or deletion do not matter for edits
-    while (pre <= max_deleted) or (post <= max_added):
+    while (pre <= max_deleted + 1) or (post <= max_added + 1):
         if use_blocks:
             # compute size of added and deleted edits
             # size is reported as 0 if the line is not in added or deleted lines, respectively
@@ -142,10 +142,66 @@ def identify_edits(deleted_lines, added_lines, use_blocks=False):
 
     return pre_to_post, edits.astype(int)
 
+
 def text_entropy(text):
     return entropy([text.count(chr(i)) for i in range(256)], base=2)
 
-def extract_edits(git_repo, commit, mod, use_blocks=False):
+
+def extrapolate_line_mapping(mapping, line_no):
+    # 'removekey' function source: https://stackoverflow.com/questions/5844672
+    def removekey(d, key):
+        r = dict(d)
+        del r[key]
+        return r
+
+    if False in mapping.keys():
+        mapping = removekey(mapping, False)
+
+    if len(mapping.keys()) == 0:
+        # this can happen if the file is only renamed and no other changes are made
+        return line_no
+    elif line_no in mapping.keys():
+        return mapping[line_no]
+    elif line_no < min(mapping.keys()):
+        return line_no
+    elif line_no > max(mapping.keys()):
+        return line_no + mapping[max(mapping.keys())] - max(mapping.keys())
+    else:
+        raise Exception("Unexpected error in 'extrapolate_line_mapping'.")
+
+
+def get_original_line_number(git_repo, filename, pre_hash, post_hash, post_line_no, aliases):
+    commit = git_repo.get_commit(post_hash)
+
+    if pre_hash[0:7] == commit.hash[0:7]:
+        return post_line_no
+    else:
+        modification = None
+        for mod in commit.modifications:
+            if mod.filename in aliases[filename]:
+                modification = mod
+
+        if pd.isnull(modification):
+            return get_original_line_number(git_repo, filename, pre_hash, commit.hash + '^',
+                                            post_line_no, aliases)
+
+        else:
+            parsed_lines = git_repo.parse_diff(modification.diff)
+
+            deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
+            added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
+
+            pre_to_post, _ = identify_edits(deleted_lines, added_lines, use_blocks=True)
+
+            post_to_pre = {value: key for key, value in pre_to_post.items()}
+
+            pre_line_no = extrapolate_line_mapping(post_to_pre, post_line_no)
+
+            return get_original_line_number(git_repo, filename, pre_hash, commit.hash + '^',
+                                            pre_line_no, aliases)
+
+
+def extract_edits(git_repo, commit, mod, aliases, use_blocks=False):
 
     df = pd.DataFrame()
 
@@ -156,19 +212,19 @@ def extract_edits(git_repo, commit, mod, use_blocks=False):
     deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
     added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
-    pre_to_post, edits = identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
+    _, edits = identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
 
     for _, edit in edits.iterrows():
-        c = {}
-        c['mod_filename'] = mod.filename
-        c['mod_new_path'] = path
-        c['mod_old_path'] = mod.old_path
-        c['post_commit'] = commit.hash
-        c['mod_added'] = mod.added
-        c['mod_removed'] = mod.removed
-        c['mod_cyclomatic_complexity'] = mod.complexity
-        c['mod_loc'] = mod.nloc
-        c['mod_token_count'] = mod.token_count
+        e = {}
+        e['mod_filename'] = mod.filename
+        e['mod_new_path'] = path
+        e['mod_old_path'] = mod.old_path
+        e['post_commit'] = commit.hash
+        e['mod_added'] = mod.added
+        e['mod_removed'] = mod.removed
+        e['mod_cyclomatic_complexity'] = mod.complexity
+        e['mod_loc'] = mod.nloc
+        e['mod_token_count'] = mod.token_count
 
         deleted_block = []
         for i in range(edit['pre start'],
@@ -183,47 +239,54 @@ def extract_edits(git_repo, commit, mod, use_blocks=False):
         deleted_block = ' '.join(deleted_block)
         added_block = ' '.join(added_block)
 
-        c['pre_starting_line_num'] = edit['pre start']
+
+        e['pre_starting_line_num'] = edit['pre start']
 
         if edit['number of deleted lines'] == 0:
-            c['pre_len_in_lines'] = None
-            c['pre_len_in_chars'] = None
-            c['pre_entropy'] = None
-            c['pre_commit'] = None
+            e['pre_len_in_lines'] = None
+            e['pre_len_in_chars'] = None
+            e['pre_entropy'] = None
+            e['pre_commit'] = None
+            e['original_line_number'] = None
         else:
             try:
                 blame = git_repo.git.blame(commit.hash + '^', '--', path).split('\n')
                 blame_fields = blame[edit['pre start'] - 1].split(' ')
                 original_commit_hash = blame_fields[0].replace('^', '')
-                c['pre_commit'] = original_commit_hash
+                e['pre_commit'] = original_commit_hash
+                e['original_line_number'] = get_original_line_number(git_repo, mod.filename,
+                                                                     original_commit_hash,
+                                                                     commit.hash + '^',
+                                                                     edit['pre start'], aliases)
             except GitCommandError:
                 # in this case, the file does not exist in the previous commit
                 # thus, is created for the first time
-                c['pre_commit'] = None
-            c['pre_len_in_lines'] = edit['number of deleted lines']
-            c['pre_len_in_chars'] = len(deleted_block)
+                e['pre_commit'] = None
+                e['original_line_number'] = None
+            e['pre_len_in_lines'] = edit['number of deleted lines']
+            e['pre_len_in_chars'] = len(deleted_block)
             if len(deleted_block) > 0:
-                c['pre_entropy'] = text_entropy(deleted_block)
+                e['pre_entropy'] = text_entropy(deleted_block)
             else:
-                c['pre_entropy'] = None
+                e['pre_entropy'] = None
 
-        c['post_starting_line_num'] = edit['post start']
+        e['post_starting_line_num'] = edit['post start']
         if edit['number of added lines'] == 0:
-            c['post_len_in_lines'] = None
-            c['post_len_in_chars'] = None
-            c['post_entropy'] = None
+            e['post_len_in_lines'] = None
+            e['post_len_in_chars'] = None
+            e['post_entropy'] = None
 
         else:
-            c['post_len_in_lines'] = edit['number of added lines']
-            c['post_len_in_chars'] = len(added_block)
+            e['post_len_in_lines'] = edit['number of added lines']
+            e['post_len_in_chars'] = len(added_block)
             if len(added_block) > 0:
-                c['post_entropy'] = text_entropy(added_block)
-                c['levenshtein_dist'] = lev_dist(deleted_block, added_block)
+                e['post_entropy'] = text_entropy(added_block)
+                e['levenshtein_dist'] = lev_dist(deleted_block, added_block)
             else:
-                c['post_entropy'] = None
-                c['levenshtein_dist'] = None
+                e['post_entropy'] = None
+                e['levenshtein_dist'] = None
 
-        df = df.append(c, ignore_index=True, sort=False)
+        df = df.append(e, ignore_index=True, sort=False)
 
     return df
 
@@ -290,10 +353,12 @@ def process_commit(args):
                 e['post_len_in_chars'] = None
                 e['post_entropy'] = None
                 e['levenshtein_dist'] = None
+                e['original_line_number'] = None
                 df_edits = df_edits.append(e, ignore_index=True, sort=True)
             else:
                 df_edits = df_edits.append(extract_edits(git_repo, commit, modification,
-                                                        use_blocks=args['use_blocks']),
+                                                        use_blocks=args['use_blocks'],
+                                                        aliases=args['aliases']),
                                         ignore_index=True, sort=True)
 
     df_commit = pd.DataFrame(c, index=[0])
@@ -301,7 +366,8 @@ def process_commit(args):
     return {'commit': df_commit, 'edits': df_edits}
 
 
-def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=None, _p_commits=[]):
+def process_repo_serial(repo_string, sqlite_db_file, aliases, use_blocks=False, exclude=None,
+                        _p_commits=[]):
     git_repo = pydriller.GitRepository(repo_string)
     exclude_paths = []
     if exclude:
@@ -311,11 +377,10 @@ def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=N
     df_commits = pd.DataFrame()
     df_edits = pd.DataFrame()
 
-    i = 0
     commits = [commit for commit in git_repo.get_list_commits() if commit.hash not in _p_commits]
     for commit in tqdm(commits, desc='Serial'):
         args = {'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
-                'exclude_paths': exclude_paths}
+                'exclude_paths': exclude_paths, 'aliases': aliases}
         result = process_commit(args)
         df_commits = pd.concat([df_commits, result['commit']], sort=True)
         df_edits = pd.concat([df_edits, result['edits']], sort=True)
@@ -327,7 +392,7 @@ def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=N
         df_edits.to_sql('edits', con, if_exists='append')
 
 
-def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
+def process_repo_parallel(repo_string, sqlite_db_file, aliases, use_blocks=False,
                           num_processes=os.cpu_count(), chunksize=1, exclude=None, _p_commits=[]):
     git_repo = pydriller.GitRepository(repo_string)
     exclude_paths = []
@@ -336,7 +401,7 @@ def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
             exclude_paths = [x.strip() for x in f.readlines()]
 
     args = [{'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
-             'exclude_paths': exclude_paths}
+             'exclude_paths': exclude_paths, 'aliases': aliases}
             for commit in git_repo.get_list_commits() if commit.hash not in _p_commits]
 
     con = sqlite3.connect(sqlite_db_file)
@@ -350,10 +415,11 @@ def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
                 result['edits'].to_sql('edits', con, if_exists='append')
             pbar.update(1)
 
-def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False):
+def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False, merge_renaming=True):
     con = sqlite3.connect(sqlite_db_file)
 
     try:
+        path = con.execute("SELECT repository FROM _metadata").fetchall()[0][0]
         method = con.execute("SELECT method FROM _metadata").fetchall()[0][0]
         if method == 'blocks':
             raise Exception("Invalid database. A database mined with 'use_blocks=False' is " +
@@ -367,7 +433,7 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False):
                                   mod_filename,
                                   pre_commit,
                                   post_commit,
-                                  pre_starting_line_num,
+                                  original_line_number,
                                   post_starting_line_num,
                                   pre_len_in_lines,
                                   post_len_in_lines
@@ -377,6 +443,15 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False):
     edits.loc[:, 'pre_commit'] = edits.pre_commit.apply(lambda x: x[0:7] if not pd.isnull(x) else x)
     edits.loc[:, 'post_commit'] = edits.post_commit.apply(
                                     lambda x: x[0:7] if not pd.isnull(x) else x)
+    edits.loc[:, 'original_line_number'] = edits.original_line_number.apply(
+                                                lambda x: float(x) if not pd.isnull(x) else x)
+
+    if merge_renaming:
+        # identify files that have been renamed
+        _, aliases = identify_file_renaming(path)
+        # update their name in the edits table
+        for key, value in aliases.items():
+                edits.replace(key, value[0], inplace=True)
 
     # get a list of all files
     if filenames == False:
@@ -406,28 +481,32 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False):
         file_edits.sort_values('post_author_date', ascending=True, inplace=True)
 
         for _, edit in file_edits.iterrows():
-            if pd.isnull(edit.pre_author_name):
-                source = filename
-                target = filename + ' ' + 'L' + str(int(edit.post_starting_line_num)) + ' ' + \
-                         str(edit.post_author_date) + ' ' + edit.post_author_name
-            elif pd.isnull(edit.post_len_in_lines):
-                source = filename + ' ' + 'L' + str(int(edit.pre_starting_line_num)) + ' ' + \
-                            str(edit.pre_author_date) + ' ' + edit.pre_author_name
-                target = 'deleted line ' + 'L' + str(int(edit.pre_starting_line_num)) + ' ' + \
+            if not (pd.isnull(edit.original_line_number) and pd.isnull(edit.post_starting_line_num)):
+                if pd.isnull(edit.pre_author_name):
+                    source = filename
+                    target = filename + ' ' + 'L' + str(int(edit.post_starting_line_num)) + ' ' + \
                             str(edit.post_author_date) + ' ' + edit.post_author_name
-            else:
-                source = filename + ' ' + 'L' + str(int(edit.pre_starting_line_num)) + ' ' + \
-                            str(edit.pre_author_date) + ' ' + edit.pre_author_name
-                target = filename + ' ' + 'L' + str(int(edit.post_starting_line_num)) + ' ' + \
-                            str(edit.post_author_date) + ' ' + edit.post_author_name
+                elif pd.isnull(edit.post_len_in_lines):
+                    source = filename + ' ' + 'L' + str(int(edit.original_line_number)) + ' ' + \
+                                str(edit.pre_author_date) + ' ' + edit.pre_author_name
+                    target = 'deleted line ' + 'L' + str(int(edit.original_line_number)) + ' ' + \
+                                str(edit.post_author_date) + ' ' + edit.post_author_name
+                else:
+                    source = filename + ' ' + 'L' + str(int(edit.original_line_number)) + ' ' + \
+                                str(edit.pre_author_date) + ' ' + edit.pre_author_name
+                    target = filename + ' ' + 'L' + str(int(edit.post_starting_line_num)) + ' ' + \
+                                str(edit.post_author_date) + ' ' + edit.post_author_name
 
-            dag.add_edge(source, target)
-            node_info['authors'][source] = edit.pre_author_name
-            node_info['authors'][target] = edit.post_author_name
-            node_info['filenames'][source] = filename
-            node_info['filenames'][target] = filename
-            node_info['edit_distance'][target] = edit.levenshtein_dist
-            edge_info['weights'][(source, target)] = edit.levenshtein_dist
+                if source not in dag.nodes:
+                    print(source)
+
+                dag.add_edge(source, target)
+                node_info['authors'][source] = edit.pre_author_name
+                node_info['authors'][target] = edit.post_author_name
+                node_info['filenames'][source] = filename
+                node_info['filenames'][target] = filename
+                node_info['edit_distance'][target] = edit.levenshtein_dist
+                edge_info['weights'][(source, target)] = edit.levenshtein_dist
 
         for node in dag.nodes:
             if node == filename:
@@ -449,6 +528,40 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False):
     paths = pp.path_extraction.paths_from_dag(dag)
 
     return dag, paths, node_info, edge_info
+
+
+def identify_file_renaming(repo_string):
+    git_repo = pydriller.GitRepository(repo_string)
+
+    dag = pp.DAG()
+    for commit in git_repo.get_list_commits():
+        for modification in commit.modifications:
+            if modification.old_path != modification.new_path:
+                dag.add_edge(modification.old_path, modification.new_path)
+
+    def get_leaf_node(dag, node):
+        if len(dag.successors[node]) > 0:
+            return get_leaf_node(dag, list(dag.successors[node])[0])
+        else:
+            return node
+
+    def get_path_to_leaf_node(dag, node, _path=[]):
+        if len(dag.successors[node]) > 0:
+            return get_path_to_leaf_node(dag, list(dag.successors[node])[0], _path=[node] + _path)
+        else:
+            return [node] + _path
+
+    renamings = []
+    for node in dag.nodes:
+        if None in dag.predecessors[node]:
+            renamings.append(get_path_to_leaf_node(dag, node))
+
+    aliases = {}
+    for renaming in renamings:
+        for alias in renaming:
+            aliases[alias] = renaming
+
+    return dag, aliases
 
 
 def get_unified_changes(repo_string, commit_hash, filename):
@@ -692,12 +805,14 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False, num_processes=o
             con.commit()
             p_commits = []
 
+    _, aliases = identify_file_renaming(repo_string)
+
     if num_processes > 1:
         process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
-                              use_blocks=use_blocks, num_processes=num_processes,
+                              aliases=aliases, use_blocks=use_blocks, num_processes=num_processes,
                               chunksize=chunksize, exclude=exclude, _p_commits=p_commits)
     else:
-        process_repo_serial(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
+        process_repo_serial(repo_string=repo_string, sqlite_db_file=sqlite_db_file, aliases=aliases,
                             use_blocks=use_blocks, exclude=exclude, _p_commits=p_commits)
 
 

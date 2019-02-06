@@ -2,3 +2,4 @@
 .vscode/settings.json
 *.db-journal
 *.pyc
+*.html

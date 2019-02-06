@@ -9,14 +9,14 @@ import numpy as np
 # sqlite_db_file = 'kdd_anomalies.db'
 
 # dag, paths, node_info, edge_info = git2net.extract_editing_paths(sqlite_db_file, with_start=True,
-#                                     filenames=['manuscript.tex', 'method.tex', 'data.tex'])
+#                                     file_paths=['manuscript.tex', 'method.tex', 'data.tex'])
 
 sqlite_db_file = 'out.db'
 
-# dag, paths, node_info, edge_info = git2net.extract_editing_paths(sqlite_db_file, with_start=True, filenames=['.gitignore', 'ignore'])
+# dag, paths, node_info, edge_info = git2net.extract_editing_paths(sqlite_db_file, with_start=True, file_paths=['.gitignore', 'ignore'])
 dag, paths, node_info, edge_info = git2net.extract_editing_paths(sqlite_db_file, with_start=True)
 
-pp.visualisation.plot(dag, width=1500, height=1500, node_color=node_info['colors'])
+# pp.visualisation.plot(dag, width=1500, height=1500, node_color=node_info['colors'])
 
 #%%
 print(paths.summary())
@@ -36,7 +36,6 @@ df.replace('#5B4E77', 'initial and final', inplace=True)
 df.replace('giona', 'Giona Casiraghi', inplace=True)
 df.replace('fschweitzer-ETHZ', 'Frank Schweitzer', inplace=True)
 df.replace('eliassi', 'Tina Eliassi-Rad', inplace=True)
-df
 
 #%%
 import sqlite3
@@ -48,75 +47,90 @@ con = sqlite3.connect(sqlite_db_file)
 path = con.execute("SELECT repository FROM _metadata").fetchall()[0][0]
 dag, aliases = git2net.identify_file_renaming(path)
 dag
-aliases
 
 
 #%%
 file_info_count = {}
-for filename in df.filenames.unique():
-    file_info_count[filename] = {}
+for file_path in df.file_paths.unique():
+    file_info_count[file_path] = {}
     for author in df.authors.unique():
-        file_info_count[filename][author] = {}
-        file_info_count[filename][author]['initial'] = len(df.loc[(df.authors == author) &
+        file_info_count[file_path][author] = {}
+        file_info_count[file_path][author]['initial'] = len(df.loc[(df.authors == author) &
                                                             (df.colors == 'initial') &
-                                                            (df.filenames == filename), :])
-        file_info_count[filename][author]['intermediate'] = len(df.loc[(df.authors == author) &
+                                                            (df.file_paths == file_path), :])
+        file_info_count[file_path][author]['intermediate'] = len(df.loc[(df.authors == author) &
                                                                  (df.colors == 'intermediate') &
-                                                                 (df.filenames == filename), :])
-        file_info_count[filename][author]['final'] = len(df.loc[(df.authors == author) &
+                                                                 (df.file_paths == file_path), :])
+        file_info_count[file_path][author]['final'] = len(df.loc[(df.authors == author) &
                                                           (df.colors == 'final') &
-                                                          (df.filenames == filename), :])
-        file_info_count[filename][author]['deleted'] = len(df.loc[(df.authors == author) &
+                                                          (df.file_paths == file_path), :])
+        file_info_count[file_path][author]['deleted'] = len(df.loc[(df.authors == author) &
                                                             (df.colors == 'deleted') &
-                                                            (df.filenames == filename), :])
-        file_info_count[filename][author]['initial and final'] = len(df.loc[(df.authors == author) &
+                                                            (df.file_paths == file_path), :])
+        file_info_count[file_path][author]['initial and final'] = len(df.loc[(df.authors == author) &
                                                                 (df.colors == 'initial and final') &
-                                                                (df.filenames == filename), :])
+                                                                (df.file_paths == file_path), :])
 
 
 file_info_dist = {}
-for filename in df.filenames.unique():
-    file_info_dist[filename] = {}
+for file_path in df.file_paths.unique():
+    file_info_dist[file_path] = {}
     for author in df.authors.unique():
-        file_info_dist[filename][author] = {}
-        file_info_dist[filename][author]['initial'] = np.nansum(df.loc[(df.authors == author) &
+        file_info_dist[file_path][author] = {}
+        file_info_dist[file_path][author]['initial'] = np.nansum(df.loc[(df.authors == author) &
                                                             (df.colors == 'initial') &
-                                                            (df.filenames == filename), :].edit_distance)
-        file_info_dist[filename][author]['intermediate'] = np.nansum(df.loc[(df.authors == author) &
+                                                            (df.file_paths == file_path), :].edit_distance)
+        file_info_dist[file_path][author]['intermediate'] = np.nansum(df.loc[(df.authors == author) &
                                                                  (df.colors == 'intermediate') &
-                                                                 (df.filenames == filename), :].edit_distance)
-        file_info_dist[filename][author]['final'] = np.nansum(df.loc[(df.authors == author) &
+                                                                 (df.file_paths == file_path), :].edit_distance)
+        file_info_dist[file_path][author]['final'] = np.nansum(df.loc[(df.authors == author) &
                                                           (df.colors == 'final') &
-                                                          (df.filenames == filename), :].edit_distance)
-        file_info_dist[filename][author]['deleted'] = np.nansum(df.loc[(df.authors == author) &
+                                                          (df.file_paths == file_path), :].edit_distance)
+        file_info_dist[file_path][author]['deleted'] = np.nansum(df.loc[(df.authors == author) &
                                                             (df.colors == 'deleted') &
-                                                            (df.filenames == filename), :].edit_distance)
-        file_info_dist[filename][author]['initial and final'] = np.nansum(df.loc[(df.authors == author) &
+                                                            (df.file_paths == file_path), :].edit_distance)
+        file_info_dist[file_path][author]['initial and final'] = np.nansum(df.loc[(df.authors == author) &
                                                                 (df.colors == 'initial and final') &
-                                                                (df.filenames == filename), :].edit_distance)
+                                                                (df.file_paths == file_path), :].edit_distance)
 
 #%%
-for filename in file_info_count.keys():
+for file_path in file_info_count.keys():
     bottom = [0,0,0,0,0]
-    for author in file_info_count[filename].keys():
-        plt.bar(file_info_count[filename][author].keys(), file_info_count[filename][author].values(),
+    for author in file_info_count[file_path].keys():
+        plt.bar(file_info_count[file_path][author].keys(), file_info_count[file_path][author].values(),
                 bottom=bottom)
-        bottom = [sum(x) for x in zip(bottom, file_info_count[filename][author].values())]
-    plt.legend(file_info_count[filename].keys())
-    plt.title(filename)
+        bottom = [sum(x) for x in zip(bottom, file_info_count[file_path][author].values())]
+    plt.legend(file_info_count[file_path].keys())
+    plt.title(file_path)
     plt.show()
 
 
 #%%
-for filename in file_info_dist.keys():
+for file_path in file_info_dist.keys():
     bottom = [0,0,0,0,0]
-    for author in file_info_dist[filename].keys():
-        plt.bar(file_info_dist[filename][author].keys(), file_info_dist[filename][author].values(),
+    for author in file_info_dist[file_path].keys():
+        plt.bar(file_info_dist[file_path][author].keys(), file_info_dist[file_path][author].values(),
                 bottom=bottom)
-        bottom = [sum(x) for x in zip(bottom, file_info_dist[filename][author].values())]
-    plt.legend(file_info_dist[filename].keys())
-    plt.title(filename)
+        bottom = [sum(x) for x in zip(bottom, file_info_dist[file_path][author].values())]
+    plt.legend(file_info_dist[file_path].keys())
+    plt.title(file_path)
     plt.show()
+
+####################################################################################################
+
+#%%
+import pydriller
+import importlib
+import git2net
+importlib.reload(git2net)
+path = '../kdd-anomalies'
+dag, aliases = git2net.identify_file_renaming(path)
+dag
+
+#%%
+aliases
+
+
 
 
 #%%

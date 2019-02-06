@@ -170,7 +170,7 @@ def extrapolate_line_mapping(mapping, line_no):
         raise Exception("Unexpected error in 'extrapolate_line_mapping'.")
 
 
-def get_original_line_number(git_repo, filename, pre_hash, post_hash, post_line_no, aliases):
+def get_original_line_number(git_repo, file_path, pre_hash, post_hash, post_line_no, aliases):
     commit = git_repo.get_commit(post_hash)
 
     if pre_hash[0:7] == commit.hash[0:7]:
@@ -178,11 +178,11 @@ def get_original_line_number(git_repo, filename, pre_hash, post_hash, post_line_
     else:
         modification = None
         for mod in commit.modifications:
-            if mod.filename in aliases[filename]:
+            if mod.new_path in aliases[file_path]:
                 modification = mod
 
         if pd.isnull(modification):
-            return get_original_line_number(git_repo, filename, pre_hash, commit.hash + '^',
+            return get_original_line_number(git_repo, file_path, pre_hash, commit.hash + '^',
                                             post_line_no, aliases)
 
         else:
@@ -197,11 +197,11 @@ def get_original_line_number(git_repo, filename, pre_hash, post_hash, post_line_
 
             pre_line_no = extrapolate_line_mapping(post_to_pre, post_line_no)
 
-            return get_original_line_number(git_repo, filename, pre_hash, commit.hash + '^',
+            return get_original_line_number(git_repo, file_path, pre_hash, commit.hash + '^',
                                             pre_line_no, aliases)
 
 
-def extract_edits(git_repo, commit, mod, aliases, use_blocks=False):
+def extract_edits(git_repo, commit, mod, aliases, use_blocks=False, extract_original_line_num=False):
 
     df = pd.DataFrame()
 
@@ -254,10 +254,13 @@ def extract_edits(git_repo, commit, mod, aliases, use_blocks=False):
                 blame_fields = blame[edit['pre start'] - 1].split(' ')
                 original_commit_hash = blame_fields[0].replace('^', '')
                 e['pre_commit'] = original_commit_hash
-                e['original_line_num'] = get_original_line_number(git_repo, mod.filename,
-                                                                     original_commit_hash,
-                                                                     commit.hash + '^',
-                                                                     edit['pre start'], aliases)
+                if extract_original_line_num:
+                    e['original_line_num'] = get_original_line_number(git_repo, mod.new_path,
+                                                                      original_commit_hash,
+                                                                      commit.hash + '^',
+                                                                      edit['pre start'], aliases)
+                else:
+                    e['original_line_num'] = 'not computed'
             except GitCommandError:
                 # in this case, the file does not exist in the previous commit
                 # thus, is created for the first time
@@ -321,16 +324,13 @@ def process_commit(args):
     # parse modification
     for modification in commit.modifications:
         exclude_file = False
-        excluded_path = ''
         for x in args['exclude_paths']:
             if modification.new_path:
                 if modification.new_path.startswith(x + os.sep) or (modification.new_path == x):
                     exclude_file = True
-                    excluded_path = modification.new_path
             if not exclude_file and modification.old_path:
                 if modification.old_path.startswith(x + os.sep):
                     exclude_file = True
-                    excluded_path = modification.old_path
         if not exclude_file:
             if modification.diff == '':
                 e = {}
@@ -357,16 +357,17 @@ def process_commit(args):
                 df_edits = df_edits.append(e, ignore_index=True, sort=True)
             else:
                 df_edits = df_edits.append(extract_edits(git_repo, commit, modification,
-                                                        use_blocks=args['use_blocks'],
-                                                        aliases=args['aliases']),
-                                        ignore_index=True, sort=True)
+                                use_blocks=args['use_blocks'], aliases=args['aliases'],
+                                extract_original_line_num=args['extract_original_line_num']),
+                            ignore_index=True, sort=True)
 
     df_commit = pd.DataFrame(c, index=[0])
 
     return {'commit': df_commit, 'edits': df_edits}
 
 
-def process_repo_serial(repo_string, sqlite_db_file, aliases, use_blocks=False, exclude=None,
+def process_repo_serial(repo_string, sqlite_db_file, aliases, use_blocks=False,
+                        extract_original_line_num=False, exclude=None,
                         _p_commits=[]):
     git_repo = pydriller.GitRepository(repo_string)
     exclude_paths = []
@@ -380,7 +381,8 @@ def process_repo_serial(repo_string, sqlite_db_file, aliases, use_blocks=False, 
     commits = [commit for commit in git_repo.get_list_commits() if commit.hash not in _p_commits]
     for commit in tqdm(commits, desc='Serial'):
         args = {'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
-                'exclude_paths': exclude_paths, 'aliases': aliases}
+                'exclude_paths': exclude_paths, 'aliases': aliases,
+                'extract_original_line_num': extract_original_line_num}
         result = process_commit(args)
         df_commits = pd.concat([df_commits, result['commit']], sort=True)
         df_edits = pd.concat([df_edits, result['edits']], sort=True)
@@ -393,7 +395,8 @@ def process_repo_serial(repo_string, sqlite_db_file, aliases, use_blocks=False, 
 
 
 def process_repo_parallel(repo_string, sqlite_db_file, aliases, use_blocks=False,
-                          num_processes=os.cpu_count(), chunksize=1, exclude=None, _p_commits=[]):
+                          extract_original_line_num=False, num_processes=os.cpu_count(),
+                          chunksize=1, exclude=None, _p_commits=[]):
     git_repo = pydriller.GitRepository(repo_string)
     exclude_paths = []
     if exclude:
@@ -401,7 +404,8 @@ def process_repo_parallel(repo_string, sqlite_db_file, aliases, use_blocks=False
             exclude_paths = [x.strip() for x in f.readlines()]
 
     args = [{'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
-             'exclude_paths': exclude_paths, 'aliases': aliases}
+             'exclude_paths': exclude_paths, 'aliases': aliases,
+             'extract_original_line_num': extract_original_line_num}
             for commit in git_repo.get_list_commits() if commit.hash not in _p_commits]
 
     con = sqlite3.connect(sqlite_db_file)
@@ -416,7 +420,7 @@ def process_repo_parallel(repo_string, sqlite_db_file, aliases, use_blocks=False
             pbar.update(1)
 
 
-def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False, merge_renaming=True):
+def extract_editing_paths(sqlite_db_file, file_paths=False, with_start=False, merge_renaming=True):
     con = sqlite3.connect(sqlite_db_file)
 
     try:
@@ -431,7 +435,7 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False, mer
 
     commits = pd.read_sql("""SELECT hash, author_name, author_date FROM commits""", con)
     edits = pd.read_sql("""SELECT levenshtein_dist,
-                                  mod_filename,
+                                  mod_new_path,
                                   pre_commit,
                                   post_commit,
                                   original_line_num,
@@ -455,20 +459,20 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False, mer
             edits.replace(key, value[0], inplace=True)
 
     # get a list of all files
-    if filenames == False:
-        filenames = edits.mod_filename.unique()
+    if file_paths == False:
+        file_paths = edits.mod_new_path.unique()
 
     n = pp.Network()
     node_info = {}
     node_info['colors'] = {}
     node_info['authors'] = {}
-    node_info['filenames'] = {}
+    node_info['file_paths'] = {}
     node_info['edit_distance'] = {}
     edge_info = {}
     edge_info['weights'] = {}
-    for filename in filenames:
+    for file_path in file_paths:
         file_dag = pp.DAG()
-        file_edits = edits.loc[edits.mod_filename == filename, :]
+        file_edits = edits.loc[edits.mod_new_path == file_path, :]
 
         file_edits = pd.merge(file_edits, commits, how='left', left_on='pre_commit',
                                 right_on='hash').drop(['pre_commit', 'hash'], axis=1)
@@ -485,36 +489,36 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False, mer
         for _, edit in file_edits.iterrows():
             if not (pd.isnull(edit.original_line_num) and pd.isnull(edit.post_starting_line_num)):
                 if pd.isnull(edit.pre_author_name):
-                    source = filename
-                    target = filename + ' ' + 'L' + str(int(edit.post_starting_line_num)) + ' ' + \
+                    source = file_path
+                    target = file_path + ' ' + 'L' + str(int(edit.post_starting_line_num)) + ' ' + \
                             str(edit.post_author_date) + ' ' + edit.post_author_name
                 elif pd.isnull(edit.post_len_in_lines):
-                    source = filename + ' ' + 'L' + str(int(edit.original_line_num)) + ' ' + \
+                    source = file_path + ' ' + 'L' + str(int(edit.original_line_num)) + ' ' + \
                                 str(edit.pre_author_date) + ' ' + edit.pre_author_name
                     target = 'deleted line ' + 'L' + str(int(edit.original_line_num)) + ' ' + \
                                 str(edit.post_author_date) + ' ' + edit.post_author_name
                 else:
-                    source = filename + ' ' + 'L' + str(int(edit.original_line_num)) + ' ' + \
+                    source = file_path + ' ' + 'L' + str(int(edit.original_line_num)) + ' ' + \
                                 str(edit.pre_author_date) + ' ' + edit.pre_author_name
-                    target = filename + ' ' + 'L' + str(int(edit.post_starting_line_num)) + ' ' + \
+                    target = file_path + ' ' + 'L' + str(int(edit.post_starting_line_num)) + ' ' + \
                                 str(edit.post_author_date) + ' ' + edit.post_author_name
 
                 file_dag.add_edge(source, target)
                 node_info['authors'][source] = edit.pre_author_name
                 node_info['authors'][target] = edit.post_author_name
-                node_info['filenames'][source] = filename
-                node_info['filenames'][target] = filename
+                node_info['file_paths'][source] = file_path
+                node_info['file_paths'][target] = file_path
                 node_info['edit_distance'][target] = edit.levenshtein_dist
                 edge_info['weights'][(source, target)] = edit.levenshtein_dist
 
         for node in file_dag.nodes:
-            if node == filename:
+            if node == file_path:
                 node_info['colors'][node] = 'gray'
             elif node.startswith('deleted line'):
                 node_info['colors'][node] = '#A8322D' # red
-            elif (filename in file_dag.predecessors[node]) and (len(file_dag.successors[node]) == 0):
+            elif (file_path in file_dag.predecessors[node]) and (len(file_dag.successors[node]) == 0):
                 node_info['colors'][node] = '#5B4E77' # purple
-            elif filename in file_dag.predecessors[node]:
+            elif file_path in file_dag.predecessors[node]:
                 node_info['colors'][node] = '#218380' # green
             elif len(file_dag.successors[node]) == 0:
                 node_info['colors'][node] = '#2E5EAA' # blue
@@ -522,7 +526,7 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False, mer
                 node_info['colors'][node] = '#73D2DE' # light blue
 
         if not with_start:
-            file_dag.remove_node(filename)
+            file_dag.remove_node(file_path)
 
         n += file_dag
 
@@ -541,7 +545,11 @@ def identify_file_renaming(repo_string):
     dag = pp.DAG()
     for commit in git_repo.get_list_commits():
         for modification in commit.modifications:
-            if modification.old_path != modification.new_path:
+            if (modification.new_path not in dag.nodes) and \
+               (modification.old_path == modification.new_path) and \
+               (modification.change_type == pydriller.domain.commit.ModificationType.ADD):
+                dag.add_edge('added file', modification.new_path)
+            elif modification.old_path != modification.new_path:
                 if pd.isnull(modification.old_path):
                     dag.add_edge('added file', modification.new_path)
                 elif pd.isnull(modification.new_path):
@@ -573,15 +581,15 @@ def identify_file_renaming(repo_string):
     return dag, aliases
 
 
-def get_unified_changes(repo_string, commit_hash, filename):
+def get_unified_changes(repo_string, commit_hash, file_path):
     """
     Returns dataframe with github-like unified diff representation of the content of a file before
-    and after a commit for a given git repository, commit hash and filename.
+    and after a commit for a given git repository, commit hash and file path.
     """
     git_repo = pydriller.GitRepository(repo_string)
     commit = git_repo.get_commit(commit_hash)
     for modification in commit.modifications:
-        if modification.filename == filename:
+        if modification.file_path == file_path:
             parsed_lines = git_repo.parse_diff(modification.diff)
 
             deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
@@ -763,17 +771,22 @@ def get_unified_changes(repo_string, commit_hash, filename):
 #     return dag
 
 
-def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False, num_processes=os.cpu_count(),
-                  chunksize=1, exclude=[]):
+def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False, extract_original_line_num=False,
+                  num_processes=os.cpu_count(), chunksize=1, exclude=[]):
+
+    if use_blocks and extract_original_line_num:
+        raise Exception("Options 'use blocks' and 'extract original line num' are incompatible")
 
     if os.path.exists(sqlite_db_file):
         try:
             with sqlite3.connect(sqlite_db_file) as con:
-                prev_method, prev_repository = con.execute(
-                    "SELECT method, repository FROM _metadata").fetchall()[0]
+                prev_method, prev_repository, prev_extract_original_line_num = con.execute(
+                    """SELECT method, repository extract_original_line_num
+                       FROM _metadata""").fetchall()[0]
 
                 if (prev_method == 'blocks' if use_blocks else 'lines') and \
-                (prev_repository == repo_string):
+                   (prev_repository == repo_string) and \
+                   (prev_extract_original_line_num == prev_extract_original_line_num):
                     p_commits = set(x[0]
                         for x in con.execute("SELECT hash FROM commits").fetchall())
                     c_commits = set(c.hash
@@ -810,7 +823,8 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False, num_processes=o
                         {'version': 'git2net alpha',
                          'repository': repo_string,
                          'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                         'method': 'blocks' if use_blocks else 'lines'})
+                         'method': 'blocks' if use_blocks else 'lines',
+                         'extract_original_line_num': extract_original_line_num})
             con.commit()
             p_commits = []
 
@@ -818,11 +832,15 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False, num_processes=o
 
     if num_processes > 1:
         process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
-                              aliases=aliases, use_blocks=use_blocks, num_processes=num_processes,
-                              chunksize=chunksize, exclude=exclude, _p_commits=p_commits)
+                              aliases=aliases, use_blocks=use_blocks,
+                              extract_original_line_num=extract_original_line_num,
+                              num_processes=num_processes, chunksize=chunksize, exclude=exclude,
+                              _p_commits=p_commits)
     else:
-        process_repo_serial(repo_string=repo_string, sqlite_db_file=sqlite_db_file, aliases=aliases,
-                            use_blocks=use_blocks, exclude=exclude, _p_commits=p_commits)
+        process_repo_serial(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
+                            aliases=aliases, use_blocks=use_blocks,
+                            extract_original_line_num=extract_original_line_num, exclude=exclude,
+                            _p_commits=p_commits)
 
 
 
@@ -831,19 +849,26 @@ if __name__ == "__main__":
         description='Extracts commit and co-editing data from git repositories.')
     parser.add_argument('repo', help='Path to repository to be parsed.', type=str)
     parser.add_argument('outfile', help='Path to SQLite DB file storing results.', type=str)
-    parser.add_argument('--exclude', help='Exclude path prefixes in given file.', type=str,
-        default=None)
-    parser.add_argument('--numprocesses',
-        help='Number of CPU cores used for multi-core processing. Defaults to number of CPU cores.',
-        default=os.cpu_count(), type=int)
-    parser.add_argument('--chunksize', help='Chunk size to be used in multiprocessing.map.',
-        default=1, type=int)
     parser.add_argument('--use-blocks',
         help='Compare added and deleted blocks of code rather than lines.', dest='use_blocks',
         action='store_true')
     parser.set_defaults(use_blocks=False)
+    parser.add_argument('--extract_original_line_num',
+        help='Traces back line number for each edit to the original commit. Required to ' +
+              'construct editing paths. Cannot be used with --use-blocks. Very computation ' +
+              'intensive.', dest='extract_original_line_num',
+        action='store_true')
+    parser.set_defaults(extract_original_line_num=False)
+    parser.add_argument('--numprocesses',
+        help='Number of CPU cores used for multi-core processing. Defaults to number of CPU cores.',
+        default=os.cpu_count(), type=int)
+    parser.add_argument('--chunksize', help='Chunk size to be used in multiprocessing mapping.',
+        default=1, type=int)
+    parser.add_argument('--exclude', help='Exclude path prefixes in given file.', type=str,
+        default=None)
 
     args = parser.parse_args()
 
-    mine_git_repo(args.repo, args.outfile, exclude=args.exclude, num_processes=args.numprocesses,
-                  chunksize=args.chunksize, use_blocks=args.use_blocks)
+    mine_git_repo(args.repo, args.outfile, use_blocks=args.use_blocks,
+                  extract_original_line_num=args.extract_original_line_num,
+                  num_processes=args.numprocesses, chunksize=args.chunksize, exclude=args.exclude)

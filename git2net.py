@@ -170,22 +170,38 @@ def extrapolate_line_mapping(mapping, line_no):
         raise Exception("Unexpected error in 'extrapolate_line_mapping'.")
 
 
-def get_original_line_number(git_repo, file_path, pre_hash, post_hash, post_line_no, aliases):
-    commit = git_repo.get_commit(post_hash)
+def get_path_to_origin(git_repo, pre_hash, post_hash):
+    dag = pp.DAG()
+    dag.add_node(post_hash[0:7])
 
-    if pre_hash[0:7] == commit.hash[0:7]:
-        return post_line_no
-    else:
+    def expand_dag(dag):
+        leafs = [node for node in dag.nodes if len(dag.successors[node]) == 0]
+        for node in leafs:
+            parents = git_repo.get_commit(node).parents
+            for parent in parents:
+                dag.add_edge(node, parent[0:7])
+        return dag
+
+    while pre_hash[0:7] not in dag.nodes:
+        dag = expand_dag(dag)
+
+    return dag.routes_to_node(pre_hash[0:7])[0]
+
+
+def get_original_line_number(git_repo, file_path, pre_hash, post_hash, post_line_no, aliases):
+    path_to_origin = get_path_to_origin(git_repo, pre_hash, post_hash)
+
+    line_traverser = post_line_no
+    # the current and final commit does not need to be processed
+    for commit_hash in path_to_origin[1:-1]:
+        commit = git_repo.get_commit(commit_hash)
+
         modification = None
         for mod in commit.modifications:
             if mod.new_path in aliases[file_path]:
                 modification = mod
 
-        if pd.isnull(modification):
-            return get_original_line_number(git_repo, file_path, pre_hash, commit.hash + '^',
-                                            post_line_no, aliases)
-
-        else:
+        if not pd.isnull(modification):
             parsed_lines = git_repo.parse_diff(modification.diff)
 
             deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
@@ -195,10 +211,9 @@ def get_original_line_number(git_repo, file_path, pre_hash, post_hash, post_line
 
             post_to_pre = {value: key for key, value in pre_to_post.items()}
 
-            pre_line_no = extrapolate_line_mapping(post_to_pre, post_line_no)
+            line_traverser = extrapolate_line_mapping(post_to_pre, line_traverser)
 
-            return get_original_line_number(git_repo, file_path, pre_hash, commit.hash + '^',
-                                            pre_line_no, aliases)
+    return line_traverser
 
 
 def extract_edits(git_repo, commit, mod, aliases, use_blocks=False, extract_original_line_num=False):
@@ -828,7 +843,10 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False, extract_origina
             con.commit()
             p_commits = []
 
-    _, aliases = identify_file_renaming(repo_string)
+    if extract_original_line_num:
+        _, aliases = identify_file_renaming(repo_string)
+    else:
+        aliases=None
 
     if num_processes > 1:
         process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,

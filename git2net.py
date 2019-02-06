@@ -293,7 +293,7 @@ def extract_edits(git_repo, commit, mod, aliases, use_blocks=False, extract_orig
             e['post_len_in_lines'] = None
             e['post_len_in_chars'] = None
             e['post_entropy'] = None
-
+            e['levenshtein_dist'] = None
         else:
             e['post_len_in_lines'] = edit['number of added lines']
             e['post_len_in_chars'] = len(added_block)

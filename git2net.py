@@ -247,14 +247,14 @@ def extract_edits(git_repo, commit, mod, aliases, use_blocks=False):
             e['pre_len_in_chars'] = None
             e['pre_entropy'] = None
             e['pre_commit'] = None
-            e['original_line_number'] = None
+            e['original_line_num'] = None
         else:
             try:
                 blame = git_repo.git.blame(commit.hash + '^', '--', path).split('\n')
                 blame_fields = blame[edit['pre start'] - 1].split(' ')
                 original_commit_hash = blame_fields[0].replace('^', '')
                 e['pre_commit'] = original_commit_hash
-                e['original_line_number'] = get_original_line_number(git_repo, mod.filename,
+                e['original_line_num'] = get_original_line_number(git_repo, mod.filename,
                                                                      original_commit_hash,
                                                                      commit.hash + '^',
                                                                      edit['pre start'], aliases)
@@ -262,7 +262,7 @@ def extract_edits(git_repo, commit, mod, aliases, use_blocks=False):
                 # in this case, the file does not exist in the previous commit
                 # thus, is created for the first time
                 e['pre_commit'] = None
-                e['original_line_number'] = None
+                e['original_line_num'] = None
             e['pre_len_in_lines'] = edit['number of deleted lines']
             e['pre_len_in_chars'] = len(deleted_block)
             if len(deleted_block) > 0:
@@ -353,7 +353,7 @@ def process_commit(args):
                 e['post_len_in_chars'] = None
                 e['post_entropy'] = None
                 e['levenshtein_dist'] = None
-                e['original_line_number'] = None
+                e['original_line_num'] = None
                 df_edits = df_edits.append(e, ignore_index=True, sort=True)
             else:
                 df_edits = df_edits.append(extract_edits(git_repo, commit, modification,
@@ -415,6 +415,7 @@ def process_repo_parallel(repo_string, sqlite_db_file, aliases, use_blocks=False
                 result['edits'].to_sql('edits', con, if_exists='append')
             pbar.update(1)
 
+
 def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False, merge_renaming=True):
     con = sqlite3.connect(sqlite_db_file)
 
@@ -433,7 +434,7 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False, mer
                                   mod_filename,
                                   pre_commit,
                                   post_commit,
-                                  original_line_number,
+                                  original_line_num,
                                   post_starting_line_num,
                                   pre_len_in_lines,
                                   post_len_in_lines
@@ -443,7 +444,7 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False, mer
     edits.loc[:, 'pre_commit'] = edits.pre_commit.apply(lambda x: x[0:7] if not pd.isnull(x) else x)
     edits.loc[:, 'post_commit'] = edits.post_commit.apply(
                                     lambda x: x[0:7] if not pd.isnull(x) else x)
-    edits.loc[:, 'original_line_number'] = edits.original_line_number.apply(
+    edits.loc[:, 'original_line_num'] = edits.original_line_num.apply(
                                                 lambda x: float(x) if not pd.isnull(x) else x)
 
     if merge_renaming:
@@ -451,13 +452,13 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False, mer
         _, aliases = identify_file_renaming(path)
         # update their name in the edits table
         for key, value in aliases.items():
-                edits.replace(key, value[0], inplace=True)
+            edits.replace(key, value[0], inplace=True)
 
     # get a list of all files
     if filenames == False:
         filenames = edits.mod_filename.unique()
 
-    dag = pp.DAG()
+    n = pp.Network()
     node_info = {}
     node_info['colors'] = {}
     node_info['authors'] = {}
@@ -466,6 +467,7 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False, mer
     edge_info = {}
     edge_info['weights'] = {}
     for filename in filenames:
+        file_dag = pp.DAG()
         file_edits = edits.loc[edits.mod_filename == filename, :]
 
         file_edits = pd.merge(file_edits, commits, how='left', left_on='pre_commit',
@@ -481,26 +483,23 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False, mer
         file_edits.sort_values('post_author_date', ascending=True, inplace=True)
 
         for _, edit in file_edits.iterrows():
-            if not (pd.isnull(edit.original_line_number) and pd.isnull(edit.post_starting_line_num)):
+            if not (pd.isnull(edit.original_line_num) and pd.isnull(edit.post_starting_line_num)):
                 if pd.isnull(edit.pre_author_name):
                     source = filename
                     target = filename + ' ' + 'L' + str(int(edit.post_starting_line_num)) + ' ' + \
                             str(edit.post_author_date) + ' ' + edit.post_author_name
                 elif pd.isnull(edit.post_len_in_lines):
-                    source = filename + ' ' + 'L' + str(int(edit.original_line_number)) + ' ' + \
+                    source = filename + ' ' + 'L' + str(int(edit.original_line_num)) + ' ' + \
                                 str(edit.pre_author_date) + ' ' + edit.pre_author_name
-                    target = 'deleted line ' + 'L' + str(int(edit.original_line_number)) + ' ' + \
+                    target = 'deleted line ' + 'L' + str(int(edit.original_line_num)) + ' ' + \
                                 str(edit.post_author_date) + ' ' + edit.post_author_name
                 else:
-                    source = filename + ' ' + 'L' + str(int(edit.original_line_number)) + ' ' + \
+                    source = filename + ' ' + 'L' + str(int(edit.original_line_num)) + ' ' + \
                                 str(edit.pre_author_date) + ' ' + edit.pre_author_name
                     target = filename + ' ' + 'L' + str(int(edit.post_starting_line_num)) + ' ' + \
                                 str(edit.post_author_date) + ' ' + edit.post_author_name
 
-                if source not in dag.nodes:
-                    print(source)
-
-                dag.add_edge(source, target)
+                file_dag.add_edge(source, target)
                 node_info['authors'][source] = edit.pre_author_name
                 node_info['authors'][target] = edit.post_author_name
                 node_info['filenames'][source] = filename
@@ -508,22 +507,28 @@ def extract_editing_paths(sqlite_db_file, filenames=False, with_start=False, mer
                 node_info['edit_distance'][target] = edit.levenshtein_dist
                 edge_info['weights'][(source, target)] = edit.levenshtein_dist
 
-        for node in dag.nodes:
+        for node in file_dag.nodes:
             if node == filename:
                 node_info['colors'][node] = 'gray'
             elif node.startswith('deleted line'):
                 node_info['colors'][node] = '#A8322D' # red
-            elif (filename in dag.predecessors[node]) and (len(dag.successors[node]) == 0):
+            elif (filename in file_dag.predecessors[node]) and (len(file_dag.successors[node]) == 0):
                 node_info['colors'][node] = '#5B4E77' # purple
-            elif filename in dag.predecessors[node]:
+            elif filename in file_dag.predecessors[node]:
                 node_info['colors'][node] = '#218380' # green
-            elif len(dag.successors[node]) == 0:
+            elif len(file_dag.successors[node]) == 0:
                 node_info['colors'][node] = '#2E5EAA' # blue
             else:
                 node_info['colors'][node] = '#73D2DE' # light blue
 
         if not with_start:
-            dag.remove_node(filename)
+            file_dag.remove_node(filename)
+
+        n += file_dag
+
+    dag = pp.DAG(n.edges)
+    dag.topsort()
+    assert dag.is_acyclic is True
 
     paths = pp.path_extraction.paths_from_dag(dag)
 
@@ -537,15 +542,17 @@ def identify_file_renaming(repo_string):
     for commit in git_repo.get_list_commits():
         for modification in commit.modifications:
             if modification.old_path != modification.new_path:
-                dag.add_edge(modification.old_path, modification.new_path)
-
-    def get_leaf_node(dag, node):
-        if len(dag.successors[node]) > 0:
-            return get_leaf_node(dag, list(dag.successors[node])[0])
-        else:
-            return node
+                if pd.isnull(modification.old_path):
+                    dag.add_edge('added file', modification.new_path)
+                elif pd.isnull(modification.new_path):
+                    dag.add_edge(modification.old_path, 'deleted file')
+                else:
+                    dag.add_edge(modification.old_path, modification.new_path)
 
     def get_path_to_leaf_node(dag, node, _path=[]):
+        """
+        returns path to leaf node with leaf node at position '0' in list
+        """
         if len(dag.successors[node]) > 0:
             return get_path_to_leaf_node(dag, list(dag.successors[node])[0], _path=[node] + _path)
         else:
@@ -553,11 +560,13 @@ def identify_file_renaming(repo_string):
 
     renamings = []
     for node in dag.nodes:
-        if None in dag.predecessors[node]:
+        if 'added file' in dag.predecessors[node]:
             renamings.append(get_path_to_leaf_node(dag, node))
 
     aliases = {}
     for renaming in renamings:
+        if 'deleted file' in renaming:
+            renaming.remove('deleted file')
         for alias in renaming:
             aliases[alias] = renaming
 

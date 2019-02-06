@@ -13,7 +13,7 @@ import numpy as np
 
 sqlite_db_file = 'out.db'
 
-#dag, paths, node_info, edge_info = git2net.extract_editing_paths(sqlite_db_file, with_start=True, filenames=['git2net.py'])
+# dag, paths, node_info, edge_info = git2net.extract_editing_paths(sqlite_db_file, with_start=True, filenames=['.gitignore', 'ignore'])
 dag, paths, node_info, edge_info = git2net.extract_editing_paths(sqlite_db_file, with_start=True)
 
 pp.visualisation.plot(dag, width=1500, height=1500, node_color=node_info['colors'])
@@ -40,10 +40,15 @@ df
 
 #%%
 import sqlite3
+import importlib
+import git2net
+importlib.reload(git2net)
+sqlite_db_file = 'out.db'
 con = sqlite3.connect(sqlite_db_file)
 path = con.execute("SELECT repository FROM _metadata").fetchall()[0][0]
-dag, _ = git2net.identify_file_renaming(path)
+dag, aliases = git2net.identify_file_renaming(path)
 dag
+aliases
 
 
 #%%
@@ -113,11 +118,5 @@ for filename in file_info_dist.keys():
     plt.title(filename)
     plt.show()
 
-
-#%%
-
-
-#%%
-int(float('20.0'))
 
 #%%

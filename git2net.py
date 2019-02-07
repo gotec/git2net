@@ -240,8 +240,10 @@ def get_original_line_number(git_repo, file_path, pre_hash, post_hash, pre_line_
         if mod.new_path == file_path:
             line_content = {k: v for k, v in git_repo.parse_diff(mod.diff)['deleted']}[pre_line_num]
 
-    if pd.isnull(line_content):
-        print('WTF ', git_repo.get_commit(post_hash).hash, file_path, pre_line_num)
+    assert not pd.isnull(line_content)
+
+    if len(line_content.strip()) == 0:
+        return 'empty line'
 
     found_line_number = False
     for path_to_origin in paths_to_origin:

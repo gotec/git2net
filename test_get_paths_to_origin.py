@@ -21,11 +21,11 @@ blame_fields = blame[post_line_num - 1].split(' ')
 original_commit_hash = blame_fields[0].replace('^', '')
 
 
-dag, colors = git2net.get_paths_to_origin(git_repo, original_commit_hash, commit_hash)
+# dag, colors = git2net.get_paths_to_origin(git_repo, original_commit_hash, commit_hash)
 
-pp.visualisation.plot(dag, width=1000, height=1000, node_color=colors)
+# pp.visualisation.plot(dag, width=1000, height=1000, node_color=colors)
 
-#%%
+# #%%
 aliases = {'manuscript.tex': ['manuscript.tex']}
 git2net.get_original_line_number(git_repo, 'manuscript.tex', original_commit_hash, commit_hash + '^', 42, aliases)
 

@@ -226,27 +226,41 @@ def get_paths_to_origin(git_repo, pre_hash, post_hash):
     return dag.routes_to_node(pre_hash[0:7]) # , colors
 
 
-def get_original_line_number(git_repo, file_path, pre_hash, post_hash, post_line_no, aliases):
+def get_original_line_number(git_repo, file_path, pre_hash, post_hash, post_line_num, aliases):
     paths_to_origin = get_paths_to_origin(git_repo, pre_hash, post_hash)
+
+    print(paths_to_origin)
+
+    for mod in git_repo.get_commit(post_hash).modifications:
+        if mod.new_path == file_path:
+            line_content = mod.source_code.split('\n')[post_line_num - 1]
 
     found_line_number = False
     for path_to_origin in paths_to_origin:
-        line_traverser = post_line_no
-        try:
-            # the current and final commit does not need to be processed
-            for commit_hash in path_to_origin[1:-1]:
-                commit = git_repo.get_commit(commit_hash)
+        print('on path ', path_to_origin)
+        line_traverser = post_line_num
 
-                modification = None
-                for mod in commit.modifications:
-                    if mod.new_path in aliases[file_path]:
-                        modification = mod
+        # the current and final commit does not need to be processed
+        for commit_hash in path_to_origin[1:]:
+            print('on commit', commit_hash)
+            commit = git_repo.get_commit(commit_hash)
 
-                # ignore the commit if it's a merge
-                if commit.merge:
-                    modification = None
+            modification = None
+            for mod in commit.modifications:
+                if mod.new_path in aliases[file_path]:
+                    modification = mod
 
-                if not pd.isnull(modification):
+            print('found modification')
+
+            # ignore the commit if it's a merge
+            if commit.hash[0:7] == pre_hash[0:7]:
+                if modification.source_code.split('\n')[line_traverser - 1] == line_content:
+                    found_line_number = True
+            elif commit.merge:
+                pass # do whatever needs to be done regarding merges
+            elif not pd.isnull(modification):
+                if modification.source_code.split('\n')[line_traverser - 1] == line_content:
+                    print('line in ', commit_hash)
                     parsed_lines = git_repo.parse_diff(modification.diff)
 
                     deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
@@ -257,9 +271,9 @@ def get_original_line_number(git_repo, file_path, pre_hash, post_hash, post_line
                     post_to_pre = {value: key for key, value in pre_to_post.items()}
 
                     line_traverser = extrapolate_line_mapping(post_to_pre, line_traverser)
-            found_line_number = True
-        except Exception:
-            pass
+                else:
+                    print('line not in ', commit_hash)
+                    break
 
         if found_line_number:
             break

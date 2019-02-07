@@ -170,48 +170,102 @@ def extrapolate_line_mapping(mapping, line_no):
         raise Exception("Unexpected error in 'extrapolate_line_mapping'.")
 
 
-def get_path_to_origin(git_repo, pre_hash, post_hash):
+def get_paths_to_origin(git_repo, pre_hash, post_hash):
     dag = pp.DAG()
+    colors = {}
+
     dag.add_node(post_hash[0:7])
 
-    def expand_dag(dag):
-        leafs = [node for node in dag.nodes if len(dag.successors[node]) == 0]
+    def expand_dag(dag, leafs):
         for node in leafs:
             parents = git_repo.get_commit(node).parents
             for parent in parents:
                 dag.add_edge(node, parent[0:7])
         return dag
 
-    while pre_hash[0:7] not in dag.nodes:
-        dag = expand_dag(dag)
+    leafs = [post_hash[0:7]]
 
-    return dag.routes_to_node(pre_hash[0:7])[0]
+    cont = True
+    while cont:
+        dag = expand_dag(dag, leafs)
+        leafs = [node for node in dag.nodes if len(dag.successors[node]) == 0]
+        if (len(leafs) == 1) and (pre_hash[0:7] in dag.nodes):
+            cont = False
+
+    paths = dag.routes_to_node(pre_hash[0:7])
+    nodes_on_path = set(node for path in paths for node in path)
+
+    colors = {}
+    for node in dag.nodes:
+        commit = git_repo.get_commit(node)
+        if commit.merge:
+            colors[node] = '#FBB13C' # yellow
+        elif commit.hash[0:7] == pre_hash[0:7]:
+            colors[node] = '#218380' # green
+        elif commit.hash[0:7] == post_hash[0:7]:
+            colors[node] = '#2E5EAA' # blue
+        elif node in nodes_on_path:
+            colors[node] = '#73D2DE' # light blue
+        else:
+            colors[node] = 'gray'
+
+    # or node in file_dag.nodes:
+    #         if node == file_path:
+    #             node_info['colors'][node] = 'gray'
+    #         elif node.startswith('deleted line'):
+    #             node_info['colors'][node] = '#A8322D' # red
+    #         elif (file_path in file_dag.predecessors[node]) and (len(file_dag.successors[node]) == 0):
+    #             node_info['colors'][node] = '#5B4E77' # purple
+    #         elif file_path in file_dag.predecessors[node]:
+    #             node_info['colors'][node] = '#218380' # green
+    #         elif len(file_dag.successors[node]) == 0:
+    #             node_info['colors'][node] = '#2E5EAA' # blue
+    #         else:
+    #             node_info['colors'][node] = '#73D2DE' # light blue
+
+    return dag.routes_to_node(pre_hash[0:7]) # , colors
 
 
 def get_original_line_number(git_repo, file_path, pre_hash, post_hash, post_line_no, aliases):
-    path_to_origin = get_path_to_origin(git_repo, pre_hash, post_hash)
+    paths_to_origin = get_paths_to_origin(git_repo, pre_hash, post_hash)
 
-    line_traverser = post_line_no
-    # the current and final commit does not need to be processed
-    for commit_hash in path_to_origin[1:-1]:
-        commit = git_repo.get_commit(commit_hash)
+    found_line_number = False
+    for path_to_origin in paths_to_origin:
+        line_traverser = post_line_no
+        try:
+            # the current and final commit does not need to be processed
+            for commit_hash in path_to_origin[1:-1]:
+                commit = git_repo.get_commit(commit_hash)
 
-        modification = None
-        for mod in commit.modifications:
-            if mod.new_path in aliases[file_path]:
-                modification = mod
+                modification = None
+                for mod in commit.modifications:
+                    if mod.new_path in aliases[file_path]:
+                        modification = mod
 
-        if not pd.isnull(modification):
-            parsed_lines = git_repo.parse_diff(modification.diff)
+                # ignore the commit if it's a merge
+                if commit.merge:
+                    modification = None
 
-            deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
-            added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
+                if not pd.isnull(modification):
+                    parsed_lines = git_repo.parse_diff(modification.diff)
 
-            pre_to_post, _ = identify_edits(deleted_lines, added_lines, use_blocks=True)
+                    deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
+                    added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
-            post_to_pre = {value: key for key, value in pre_to_post.items()}
+                    pre_to_post, _ = identify_edits(deleted_lines, added_lines, use_blocks=True)
 
-            line_traverser = extrapolate_line_mapping(post_to_pre, line_traverser)
+                    post_to_pre = {value: key for key, value in pre_to_post.items()}
+
+                    line_traverser = extrapolate_line_mapping(post_to_pre, line_traverser)
+            found_line_number = True
+        except Exception:
+            pass
+
+        if found_line_number:
+            break
+
+    if not found_line_number:
+        raise Exception("Unexpected error in 'get_original_line_number'.")
 
     return line_traverser
 
@@ -311,10 +365,11 @@ def extract_edits(git_repo, commit, mod, aliases, use_blocks=False, extract_orig
 
 #def process_commit(git_repo, commit, exclude_paths = set(), use_blocks = False):
 def process_commit(args):
-    # git_repo, commit, exclude_paths, use_blocks = args
-
     git_repo = pydriller.GitRepository(args['repo_string'])
     commit = git_repo.get_commit(args['commit_hash'])
+
+    if commit.merge:
+        return {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
 
     df_edits = pd.DataFrame()
 
@@ -394,6 +449,7 @@ def process_repo_serial(repo_string, sqlite_db_file, aliases, use_blocks=False,
     df_edits = pd.DataFrame()
 
     commits = [commit for commit in git_repo.get_list_commits() if commit.hash not in _p_commits]
+
     for commit in tqdm(commits, desc='Serial'):
         args = {'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
                 'exclude_paths': exclude_paths, 'aliases': aliases,

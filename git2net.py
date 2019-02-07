@@ -228,7 +228,11 @@ def get_paths_to_origin(git_repo, pre_hash, post_hash):
 
 def get_original_line_number(git_repo, file_path, pre_hash, post_hash, pre_line_num, aliases):
     paths_to_origin = get_paths_to_origin(git_repo, pre_hash, post_hash)
-
+    print('======================')
+    print(post_hash)
+    print(pre_line_num)
+    print(file_path)
+    print('----------------------')
     print(paths_to_origin)
 
     line_content = None
@@ -482,19 +486,18 @@ def process_repo_serial(repo_string, sqlite_db_file, aliases, use_blocks=False,
 
     commits = [commit for commit in git_repo.get_list_commits() if commit.hash not in _p_commits]
 
+    con = sqlite3.connect(sqlite_db_file)
+
     for commit in tqdm(commits, desc='Serial'):
         args = {'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
                 'exclude_paths': exclude_paths, 'aliases': aliases,
                 'extract_original_line_num': extract_original_line_num}
         result = process_commit(args)
-        df_commits = pd.concat([df_commits, result['commit']], sort=True)
-        df_edits = pd.concat([df_edits, result['edits']], sort=True)
 
-    con = sqlite3.connect(sqlite_db_file)
-    if not df_commits.empty:
-        df_commits.to_sql('commits', con, if_exists='append')
-    if not df_edits.empty:
-        df_edits.to_sql('edits', con, if_exists='append')
+        if not result['commit'].empty:
+            result['commit'].to_sql('commits', con, if_exists='append')
+        if not result['edits'].empty:
+            result['edits'].to_sql('edits', con, if_exists='append')
 
 
 def process_repo_parallel(repo_string, sqlite_db_file, aliases, use_blocks=False,

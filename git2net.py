@@ -262,9 +262,6 @@ def get_original_line_number(git_repo, file_path, pre_hash, post_hash, pre_line_
 
             print('found modification')
 
-            if len(modification.source_code.split('\n')) < line_traverser - 1:
-                break
-
             # ignore the commit if it's a merge
             if commit.hash[0:7] == pre_hash[0:7]:
                 print('found origin')
@@ -281,7 +278,9 @@ def get_original_line_number(git_repo, file_path, pre_hash, post_hash, pre_line_
                 print('skipping as commit is merge')
                 #pass # do whatever needs to be done regarding merges
             elif not pd.isnull(modification):
-                if modification.source_code.split('\n')[line_traverser - 1].strip() == line_content.strip():
+                if len(modification.source_code.split('\n')) < line_traverser - 1:
+                    break
+                elif modification.source_code.split('\n')[line_traverser - 1].strip() == line_content.strip():
                     print('line in ', commit_hash)
                     parsed_lines = git_repo.parse_diff(modification.diff)
 

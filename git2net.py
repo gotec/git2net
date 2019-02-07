@@ -262,6 +262,9 @@ def get_original_line_number(git_repo, file_path, pre_hash, post_hash, pre_line_
 
             print('found modification')
 
+            if len(modification.source_code.split('\n')) < line_traverser - 1:
+                break
+
             # ignore the commit if it's a merge
             if commit.hash[0:7] == pre_hash[0:7]:
                 print('found origin')

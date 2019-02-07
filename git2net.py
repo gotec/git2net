@@ -226,19 +226,23 @@ def get_paths_to_origin(git_repo, pre_hash, post_hash):
     return dag.routes_to_node(pre_hash[0:7]) # , colors
 
 
-def get_original_line_number(git_repo, file_path, pre_hash, post_hash, post_line_num, aliases):
+def get_original_line_number(git_repo, file_path, pre_hash, post_hash, pre_line_num, aliases):
     paths_to_origin = get_paths_to_origin(git_repo, pre_hash, post_hash)
 
     print(paths_to_origin)
 
+    line_content = None
     for mod in git_repo.get_commit(post_hash).modifications:
         if mod.new_path == file_path:
-            line_content = mod.source_code.split('\n')[post_line_num - 1]
+            line_content = {k: v for k, v in git_repo.parse_diff(mod.diff)['deleted']}[pre_line_num]
+
+    if pd.isnull(line_content):
+        print('WTF ', git_repo.get_commit(post_hash).hash, file_path, pre_line_num)
 
     found_line_number = False
     for path_to_origin in paths_to_origin:
         print('on path ', path_to_origin)
-        line_traverser = post_line_num
+        line_traverser = pre_line_num
 
         # the current and final commit does not need to be processed
         for commit_hash in path_to_origin[1:]:
@@ -254,12 +258,21 @@ def get_original_line_number(git_repo, file_path, pre_hash, post_hash, post_line
 
             # ignore the commit if it's a merge
             if commit.hash[0:7] == pre_hash[0:7]:
-                if modification.source_code.split('\n')[line_traverser - 1] == line_content:
+                print('found origin')
+                if modification.source_code.split('\n')[line_traverser - 1].strip() == line_content.strip():
+                    print('success')
                     found_line_number = True
+                else:
+                    print(repr(modification.source_code.split('\n')[line_traverser - 1]))
+                    print(repr(line_content))
+                    print('====================')
+                    import difflib
+                    print([li for li in difflib.ndiff(modification.source_code.split('\n')[line_traverser - 1], line_content)])
             elif commit.merge:
-                pass # do whatever needs to be done regarding merges
+                print('skipping as commit is merge')
+                #pass # do whatever needs to be done regarding merges
             elif not pd.isnull(modification):
-                if modification.source_code.split('\n')[line_traverser - 1] == line_content:
+                if modification.source_code.split('\n')[line_traverser - 1].strip() == line_content.strip():
                     print('line in ', commit_hash)
                     parsed_lines = git_repo.parse_diff(modification.diff)
 
@@ -274,6 +287,8 @@ def get_original_line_number(git_repo, file_path, pre_hash, post_hash, post_line
                 else:
                     print('line not in ', commit_hash)
                     break
+            else:
+                print('no change as file was not modified in this commit')
 
         if found_line_number:
             break
@@ -333,14 +348,17 @@ def extract_edits(git_repo, commit, mod, aliases, use_blocks=False, extract_orig
             e['original_line_num'] = None
         else:
             try:
-                blame = git_repo.git.blame(commit.hash + '^', '--', path).split('\n')
-                blame_fields = blame[edit['pre start'] - 1].split(' ')
-                original_commit_hash = blame_fields[0].replace('^', '')
+                if len(commit.parents) > 1:
+                    raise Exception("Unexpected error in 'extract_edits'.")
+                else:
+                    blame = git_repo.git.blame(commit.parents[0], '--', path).split('\n')
+                    blame_fields = blame[edit['pre start'] - 1].split(' ')
+                    original_commit_hash = blame_fields[0].replace('^', '')
                 e['pre_commit'] = original_commit_hash
                 if extract_original_line_num:
                     e['original_line_num'] = get_original_line_number(git_repo, mod.new_path,
                                                                       original_commit_hash,
-                                                                      commit.hash + '^',
+                                                                      commit.hash,
                                                                       edit['pre start'], aliases)
                 else:
                     e['original_line_num'] = 'not computed'
@@ -866,14 +884,17 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False, extract_origina
         try:
             with sqlite3.connect(sqlite_db_file) as con:
                 prev_method, prev_repository, prev_extract_original_line_num = con.execute(
-                    """SELECT method, repository extract_original_line_num
+                    """SELECT method, repository, extract_original_line_num
                        FROM _metadata""").fetchall()[0]
 
                 if (prev_method == 'blocks' if use_blocks else 'lines') and \
                    (prev_repository == repo_string) and \
                    (prev_extract_original_line_num == prev_extract_original_line_num):
-                    p_commits = set(x[0]
-                        for x in con.execute("SELECT hash FROM commits").fetchall())
+                    try:
+                        p_commits = set(x[0]
+                            for x in con.execute("SELECT hash FROM commits").fetchall())
+                    except sqlite3.OperationalError:
+                        p_commits = set()
                     c_commits = set(c.hash
                         for c in pydriller.GitRepository(repo_string).get_list_commits())
                     if not p_commits.issubset(c_commits):
@@ -902,9 +923,21 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False, extract_origina
     else:
         print("Found no database on provided path. Starting from scratch.")
         with sqlite3.connect(sqlite_db_file) as con:
-            con.execute("CREATE TABLE _metadata ('created with', 'repository', 'date', 'method')")
-            con.execute("""INSERT INTO _metadata ('created with', 'repository', 'date', 'method')
-                        VALUES (:version, :repository, :date, :method)""",
+            con.execute("""CREATE TABLE _metadata ('created with',
+                                                   'repository',
+                                                   'date',
+                                                   'method',
+                                                   'extract_original_line_num')""")
+            con.execute("""INSERT INTO _metadata ('created with',
+                                                  'repository',
+                                                  'date',
+                                                  'method',
+                                                  'extract_original_line_num')
+                        VALUES (:version,
+                                :repository,
+                                :date,
+                                :method,
+                                :extract_original_line_num)""",
                         {'version': 'git2net alpha',
                          'repository': repo_string,
                          'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),

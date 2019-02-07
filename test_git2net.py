@@ -4,13 +4,13 @@ import importlib
 import git2net
 importlib.reload(git2net)
 
-db_path = 'kdd-anomalies.db'
+db_path = 'kdd_anomalies.db'
 
-if os.path.exists(db_path):
-    os.remove(db_path)
+# if os.path.exists(db_path):
+#     os.remove(db_path)
 
-git2net.mine_git_repo('.', db_path, use_blocks=False, extract_original_line_num=True)
-# git2net.mine_git_repo('../kdd-anomalies', db_path, use_blocks=False, extract_original_line_num=True)
+# git2net.mine_git_repo('.', db_path, use_blocks=False, extract_original_line_num=True)
+git2net.mine_git_repo('../kdd-anomalies', db_path, use_blocks=False, extract_original_line_num=True, num_processes=1)
 
 
 
@@ -35,4 +35,4 @@ import pandas as pd
 d = {}
 len(d.keys()) == 0
 
-#%%
+

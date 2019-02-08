@@ -10,7 +10,7 @@ db_path = 'kdd_anomalies.db'
 #     os.remove(db_path)
 
 # git2net.mine_git_repo('.', db_path, use_blocks=False, extract_original_line_num=True)
-git2net.mine_git_repo('../kdd-anomalies', db_path, use_blocks=False, extract_original_line_num=True, num_processes=1)
+git2net.mine_git_repo('../kdd-anomalies', db_path, use_blocks=False, extract_original_line_num=True)
 
 
 
@@ -32,7 +32,9 @@ for i in range(10):
 #%%
 import pandas as pd
 
-d = {}
-len(d.keys()) == 0
+pd.DataFrame().empty
 
 
+
+
+#%%

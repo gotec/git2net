@@ -226,7 +226,7 @@ def get_paths_to_origin(git_repo, pre_hash, post_hash):
     return dag.routes_to_node(pre_hash[0:7]) # , colors
 
 
-def get_original_line_number(git_repo, file_path, pre_hash, post_hash, pre_line_num, aliases):
+def get_original_line_number(git_repo, file_path, pre_hash, post_hash, pre_line_num):
     paths_to_origin = get_paths_to_origin(git_repo, pre_hash, post_hash)
     print('======================')
     print(post_hash)
@@ -234,6 +234,9 @@ def get_original_line_number(git_repo, file_path, pre_hash, post_hash, pre_line_
     print(file_path)
     print('----------------------')
     print(paths_to_origin)
+
+
+
 
     line_content = None
     for mod in git_repo.get_commit(post_hash).modifications:
@@ -306,8 +309,33 @@ def get_original_line_number(git_repo, file_path, pre_hash, post_hash, pre_line_
 
     return line_traverser
 
+def parse_porcelain_blame(blame):
+    l = {'original commit': [],
+         'original line': [],
+         'post line': [],
+        #  'line content': [],
+         'original file': []}
+    start_of_line_info = True
+    prefix = '\t'
+    for line in blame.split('\n'):
+        if line.startswith(prefix):
+            # l['line content'].append(line[len(prefix):])
+            l['original file'].append(filename)
+            start_of_line_info = True
+        else:
+            entries = line.split(' ')
+            if start_of_line_info:
+                l['original commit'].append(entries[0])
+                l['original line'].append(entries[1])
+                l['post line'].append(entries[2])
+                start_of_line_info = False
+            elif entries[0] == 'filename':
+                filename = entries[1]
+    return pd.DataFrame(l)
 
-def extract_edits(git_repo, commit, mod, aliases, use_blocks=False, extract_original_line_num=False):
+def extract_edits(git_repo, commit, mod, use_blocks=False, extract_original_line_num=False):
+
+    #print(commit.hash, mod.filename)
 
     df = pd.DataFrame()
 
@@ -319,6 +347,17 @@ def extract_edits(git_repo, commit, mod, aliases, use_blocks=False, extract_orig
     added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
     _, edits = identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
+
+    if not edits.empty:
+        if sum(edits.loc[:, 'number of deleted lines']) > 0:
+            # otherwise no blame is required as no lines are to be traced back
+            assert len(commit.parents) == 1
+            blame = git_repo.git.blame(commit.parents[0], ['-C', '--show-number', '--porcelain'], mod.old_path)
+            blame_info = parse_porcelain_blame(blame)
+            #blame_info.to_csv('blame.csv')
+
+    #edits.to_csv('out.csv')
+
 
     for _, edit in edits.iterrows():
         e = {}
@@ -354,27 +393,18 @@ def extract_edits(git_repo, commit, mod, aliases, use_blocks=False, extract_orig
             e['pre_entropy'] = None
             e['pre_commit'] = None
             e['original_line_num'] = None
+            e['original_file_path'] = None
         else:
-            try:
-                if len(commit.parents) > 1:
-                    raise Exception("Unexpected error in 'extract_edits'.")
-                else:
-                    blame = git_repo.git.blame(commit.parents[0], '--', path).split('\n')
-                    blame_fields = blame[edit['pre start'] - 1].split(' ')
-                    original_commit_hash = blame_fields[0].replace('^', '')
-                e['pre_commit'] = original_commit_hash
-                if extract_original_line_num:
-                    e['original_line_num'] = get_original_line_number(git_repo, mod.new_path,
-                                                                      original_commit_hash,
-                                                                      commit.hash,
-                                                                      edit['pre start'], aliases)
-                else:
-                    e['original_line_num'] = 'not computed'
-            except GitCommandError:
-                # in this case, the file does not exist in the previous commit
-                # thus, is created for the first time
-                e['pre_commit'] = None
-                e['original_line_num'] = None
+            e['pre_commit'] = blame_info.at[edit['pre start'] - 1, 'original commit']
+            if use_blocks:
+                e['original_line_num'] = "currently not available with 'use-blocks'"
+                e['original_file_path'] = "currently not available with 'use-blocks'"
+            else:
+                #print(edit['post start'] - 1)
+                e['original_line_num'] = blame_info.at[edit['pre start'] - 1, 'original line']
+                #print(e['original_line_num'])
+                e['original_file_path'] = blame_info.at[edit['pre start'] - 1, 'original file']
+                #print(e['original_file_path'])
             e['pre_len_in_lines'] = edit['number of deleted lines']
             e['pre_len_in_chars'] = len(deleted_block)
             if len(deleted_block) > 0:
@@ -442,7 +472,7 @@ def process_commit(args):
                 if modification.old_path.startswith(x + os.sep):
                     exclude_file = True
         if not exclude_file:
-            if modification.diff == '':
+            if modification.diff == '': # file was only renamed or moved, no other modifications
                 e = {}
                 e['mod_filename'] = modification.filename
                 e['mod_new_path'] = modification.new_path
@@ -464,10 +494,11 @@ def process_commit(args):
                 e['post_entropy'] = None
                 e['levenshtein_dist'] = None
                 e['original_line_num'] = None
+                e['original_file_path'] = None
                 df_edits = df_edits.append(e, ignore_index=True, sort=True)
             else:
                 df_edits = df_edits.append(extract_edits(git_repo, commit, modification,
-                                use_blocks=args['use_blocks'], aliases=args['aliases'],
+                                use_blocks=args['use_blocks'],
                                 extract_original_line_num=args['extract_original_line_num']),
                             ignore_index=True, sort=True)
 
@@ -476,7 +507,7 @@ def process_commit(args):
     return {'commit': df_commit, 'edits': df_edits}
 
 
-def process_repo_serial(repo_string, sqlite_db_file, aliases, use_blocks=False,
+def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False,
                         extract_original_line_num=False, exclude=None,
                         _p_commits=[]):
     git_repo = pydriller.GitRepository(repo_string)
@@ -494,7 +525,7 @@ def process_repo_serial(repo_string, sqlite_db_file, aliases, use_blocks=False,
 
     for commit in tqdm(commits, desc='Serial'):
         args = {'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
-                'exclude_paths': exclude_paths, 'aliases': aliases,
+                'exclude_paths': exclude_paths,
                 'extract_original_line_num': extract_original_line_num}
         result = process_commit(args)
 
@@ -504,7 +535,7 @@ def process_repo_serial(repo_string, sqlite_db_file, aliases, use_blocks=False,
             result['edits'].to_sql('edits', con, if_exists='append')
 
 
-def process_repo_parallel(repo_string, sqlite_db_file, aliases, use_blocks=False,
+def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
                           extract_original_line_num=False, num_processes=os.cpu_count(),
                           chunksize=1, exclude=None, _p_commits=[]):
     git_repo = pydriller.GitRepository(repo_string)
@@ -514,7 +545,7 @@ def process_repo_parallel(repo_string, sqlite_db_file, aliases, use_blocks=False
             exclude_paths = [x.strip() for x in f.readlines()]
 
     args = [{'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
-             'exclude_paths': exclude_paths, 'aliases': aliases,
+             'exclude_paths': exclude_paths,
              'extract_original_line_num': extract_original_line_num}
             for commit in git_repo.get_list_commits() if commit.hash not in _p_commits]
 
@@ -915,7 +946,7 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False, extract_origina
                             return
                         else:
                             print("Found a matching database on provided path. " +
-                                    "Skipping {} ({:.2f}%) of {} commits. {} commits remaining"
+                                    "Skipping {} ({:.2f}%) of {} commits. {} commits remaining."
                                     .format(len(p_commits), len(p_commits) / len(c_commits) * 100,
                                             len(c_commits), len(c_commits) - len(p_commits)))
                 else:
@@ -953,20 +984,20 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False, extract_origina
             con.commit()
             p_commits = []
 
-    if extract_original_line_num:
-        _, aliases = identify_file_renaming(repo_string)
-    else:
-        aliases=None
+    # if extract_original_line_num:
+    #     _, aliases = identify_file_renaming(repo_string)
+    # else:
+    #     aliases=None
 
     if num_processes > 1:
         process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
-                              aliases=aliases, use_blocks=use_blocks,
+                              use_blocks=use_blocks,
                               extract_original_line_num=extract_original_line_num,
                               num_processes=num_processes, chunksize=chunksize, exclude=exclude,
                               _p_commits=p_commits)
     else:
         process_repo_serial(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
-                            aliases=aliases, use_blocks=use_blocks,
+                            use_blocks=use_blocks,
                             extract_original_line_num=extract_original_line_num, exclude=exclude,
                             _p_commits=p_commits)
 

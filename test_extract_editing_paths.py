@@ -16,7 +16,7 @@ sqlite_db_file = 'out.db'
 # dag, paths, node_info, edge_info = git2net.extract_editing_paths(sqlite_db_file, with_start=True, file_paths=['.gitignore', 'ignore'])
 dag, paths, node_info, edge_info = git2net.extract_editing_paths(sqlite_db_file, with_start=True)
 
-# pp.visualisation.plot(dag, width=1500, height=1500, node_color=node_info['colors'])
+pp.visualisation.plot(dag, width=1500, height=1500, node_color=node_info['colors'])
 
 #%%
 print(paths.summary())

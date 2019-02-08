@@ -9,7 +9,7 @@ from multiprocessing import Pool
 from multiprocessing import Semaphore
 
 import pandas as pd
-from tqdm import tqdm #add .auto after tqdm
+from tqdm.auto import tqdm
 import numpy as np
 from scipy.stats import entropy
 
@@ -201,7 +201,7 @@ def extract_edits(git_repo, commit, mod, use_blocks=False):
                                        mod.old_path)
             blame_info = parse_porcelain_blame(blame)
 
-    for _, edit in edits.iterrows():
+    for _, edit in tqdm(edits.iterrows(), leave=False, desc='edits'):
         e = {}
         e['mod_filename'] = mod.filename
         e['mod_new_path'] = path
@@ -300,7 +300,7 @@ def process_commit(args):
     c['branches'] = ','.join(commit.branches)
 
     # parse modification
-    for modification in commit.modifications:
+    for modification in tqdm(commit.modifications, leave=False, desc='modifications'):
         exclude_file = False
         for x in args['exclude_paths']:
             if modification.new_path:

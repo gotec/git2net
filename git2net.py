@@ -147,29 +147,6 @@ def text_entropy(text):
     return entropy([text.count(chr(i)) for i in range(256)], base=2)
 
 
-def extrapolate_line_mapping(mapping, line_no):
-    # 'removekey' function source: https://stackoverflow.com/questions/5844672
-    def removekey(d, key):
-        r = dict(d)
-        del r[key]
-        return r
-
-    if False in mapping.keys():
-        mapping = removekey(mapping, False)
-
-    if len(mapping.keys()) == 0:
-        # this can happen if the file is only renamed and no other changes are made
-        return line_no
-    elif line_no in mapping.keys():
-        return mapping[line_no]
-    elif line_no < min(mapping.keys()):
-        return line_no
-    elif line_no > max(mapping.keys()):
-        return line_no + mapping[max(mapping.keys())] - max(mapping.keys())
-    else:
-        raise Exception("Unexpected error in 'extrapolate_line_mapping'.")
-
-
 def get_commit_dag(repo_string):
     git_repo = pydriller.GitRepository(repo_string)
     commits = [x[0:7] for x in git_repo.get_list_commits()]
@@ -184,13 +161,11 @@ def parse_porcelain_blame(blame):
     l = {'original commit': [],
          'original line': [],
          'post line': [],
-        #  'line content': [],
          'original file': []}
     start_of_line_info = True
     prefix = '\t'
     for line in blame.split('\n'):
         if line.startswith(prefix):
-            # l['line content'].append(line[len(prefix):])
             l['original file'].append(filename)
             start_of_line_info = True
         else:
@@ -206,9 +181,6 @@ def parse_porcelain_blame(blame):
 
 
 def extract_edits(git_repo, commit, mod, use_blocks=False):
-
-    #print(commit.hash, mod.filename)
-
     df = pd.DataFrame()
 
     path = mod.new_path
@@ -270,11 +242,8 @@ def extract_edits(git_repo, commit, mod, use_blocks=False):
                 e['original_line_no'] = "currently not available with 'use-blocks'"
                 e['original_file_path'] = "currently not available with 'use-blocks'"
             else:
-                #print(edit['post start'] - 1)
                 e['original_line_no'] = blame_info.at[edit['pre start'] - 1, 'original line']
-                #print(e['original_line_no'])
                 e['original_file_path'] = blame_info.at[edit['pre start'] - 1, 'original file']
-                #print(e['original_file_path'])
             e['pre_len_in_lines'] = edit['number of deleted lines']
             e['pre_len_in_chars'] = len(deleted_block)
             if len(deleted_block) > 0:
@@ -303,7 +272,6 @@ def extract_edits(git_repo, commit, mod, use_blocks=False):
     return df
 
 
-#def process_commit(git_repo, commit, exclude_paths = set(), use_blocks = False):
 def process_commit(args):
     git_repo = pydriller.GitRepository(args['repo_string'])
     commit = git_repo.get_commit(args['commit_hash'])
@@ -635,7 +603,7 @@ def get_unified_changes(repo_string, commit_hash, file_path):
                     if pre_counter in pre_to_post.keys():
                         # if pre is not in the dictionary nothing has changed
                         if post_counter < pre_to_post[pre_counter]:
-                            # a edit has been added
+                            # edit has been added
                             for i in range(pre_to_post[pre_counter] - post_counter):
                                 pre_line_no.append(None)
                                 post_line_no.append(post_counter)

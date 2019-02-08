@@ -255,24 +255,24 @@ def extract_edits(git_repo, commit, mod, use_blocks=False):
         added_block = ' '.join(added_block)
 
 
-        e['pre_starting_line_num'] = edit['pre start']
+        e['pre_starting_line_no'] = edit['pre start']
 
         if edit['number of deleted lines'] == 0:
             e['pre_len_in_lines'] = None
             e['pre_len_in_chars'] = None
             e['pre_entropy'] = None
             e['pre_commit'] = None
-            e['original_line_num'] = None
+            e['original_line_no'] = None
             e['original_file_path'] = None
         else:
             e['pre_commit'] = blame_info.at[edit['pre start'] - 1, 'original commit']
             if use_blocks:
-                e['original_line_num'] = "currently not available with 'use-blocks'"
+                e['original_line_no'] = "currently not available with 'use-blocks'"
                 e['original_file_path'] = "currently not available with 'use-blocks'"
             else:
                 #print(edit['post start'] - 1)
-                e['original_line_num'] = blame_info.at[edit['pre start'] - 1, 'original line']
-                #print(e['original_line_num'])
+                e['original_line_no'] = blame_info.at[edit['pre start'] - 1, 'original line']
+                #print(e['original_line_no'])
                 e['original_file_path'] = blame_info.at[edit['pre start'] - 1, 'original file']
                 #print(e['original_file_path'])
             e['pre_len_in_lines'] = edit['number of deleted lines']
@@ -282,7 +282,7 @@ def extract_edits(git_repo, commit, mod, use_blocks=False):
             else:
                 e['pre_entropy'] = None
 
-        e['post_starting_line_num'] = edit['post start']
+        e['post_starting_line_no'] = edit['post start']
         if edit['number of added lines'] == 0:
             e['post_len_in_lines'] = None
             e['post_len_in_chars'] = None
@@ -354,16 +354,16 @@ def process_commit(args):
                 e['mod_cyclomatic_complexity'] = modification.complexity
                 e['mod_loc'] = modification.nloc
                 e['mod_token_count'] = modification.token_count
-                e['pre_starting_line_num'] = None
+                e['pre_starting_line_no'] = None
                 e['pre_len_in_lines'] = None
                 e['pre_len_in_chars'] = None
                 e['pre_entropy'] = None
-                e['post_starting_line_num'] = None
+                e['post_starting_line_no'] = None
                 e['post_len_in_lines'] = None
                 e['post_len_in_chars'] = None
                 e['post_entropy'] = None
                 e['levenshtein_dist'] = None
-                e['original_line_num'] = None
+                e['original_line_no'] = None
                 e['original_file_path'] = None
                 df_edits = df_edits.append(e, ignore_index=True, sort=True)
             else:
@@ -443,8 +443,8 @@ def extract_editing_paths(sqlite_db_file, file_paths=False, with_start=False, me
                                   mod_new_path,
                                   pre_commit,
                                   post_commit,
-                                  original_line_num,
-                                  post_starting_line_num,
+                                  original_line_no,
+                                  post_starting_line_no,
                                   pre_len_in_lines,
                                   post_len_in_lines
                            FROM edits""", con)
@@ -453,7 +453,7 @@ def extract_editing_paths(sqlite_db_file, file_paths=False, with_start=False, me
     edits.loc[:, 'pre_commit'] = edits.pre_commit.apply(lambda x: x[0:7] if not pd.isnull(x) else x)
     edits.loc[:, 'post_commit'] = edits.post_commit.apply(
                                     lambda x: x[0:7] if not pd.isnull(x) else x)
-    edits.loc[:, 'original_line_num'] = edits.original_line_num.apply(
+    edits.loc[:, 'original_line_no'] = edits.original_line_no.apply(
                                                 lambda x: float(x) if not pd.isnull(x) else x)
 
     if merge_renaming:
@@ -492,20 +492,20 @@ def extract_editing_paths(sqlite_db_file, file_paths=False, with_start=False, me
         file_edits.sort_values('post_author_date', ascending=True, inplace=True)
 
         for _, edit in file_edits.iterrows():
-            if not (pd.isnull(edit.original_line_num) and pd.isnull(edit.post_starting_line_num)):
+            if not (pd.isnull(edit.original_line_no) and pd.isnull(edit.post_starting_line_no)):
                 if pd.isnull(edit.pre_author_name):
                     source = file_path
-                    target = file_path + ' ' + 'L' + str(int(edit.post_starting_line_num)) + ' ' + \
+                    target = file_path + ' ' + 'L' + str(int(edit.post_starting_line_no)) + ' ' + \
                             str(edit.post_author_date) + ' ' + edit.post_author_name
                 elif pd.isnull(edit.post_len_in_lines):
-                    source = file_path + ' ' + 'L' + str(int(edit.original_line_num)) + ' ' + \
+                    source = file_path + ' ' + 'L' + str(int(edit.original_line_no)) + ' ' + \
                                 str(edit.pre_author_date) + ' ' + edit.pre_author_name
-                    target = 'deleted line ' + 'L' + str(int(edit.original_line_num)) + ' ' + \
+                    target = 'deleted line ' + 'L' + str(int(edit.original_line_no)) + ' ' + \
                                 str(edit.post_author_date) + ' ' + edit.post_author_name
                 else:
-                    source = file_path + ' ' + 'L' + str(int(edit.original_line_num)) + ' ' + \
+                    source = file_path + ' ' + 'L' + str(int(edit.original_line_no)) + ' ' + \
                                 str(edit.pre_author_date) + ' ' + edit.pre_author_name
-                    target = file_path + ' ' + 'L' + str(int(edit.post_starting_line_num)) + ' ' + \
+                    target = file_path + ' ' + 'L' + str(int(edit.post_starting_line_no)) + ' ' + \
                                 str(edit.post_author_date) + ' ' + edit.post_author_name
 
                 file_dag.add_edge(source, target)
@@ -587,70 +587,70 @@ def identify_file_renaming(repo_string):
     return dag, aliases
 
 
-# def get_unified_changes(repo_string, commit_hash, file_path):
-#     """
-#     Returns dataframe with github-like unified diff representation of the content of a file before
-#     and after a commit for a given git repository, commit hash and file path.
-#     """
-#     git_repo = pydriller.GitRepository(repo_string)
-#     commit = git_repo.get_commit(commit_hash)
-#     for modification in commit.modifications:
-#         if modification.file_path == file_path:
-#             parsed_lines = git_repo.parse_diff(modification.diff)
+def get_unified_changes(repo_string, commit_hash, file_path):
+    """
+    Returns dataframe with github-like unified diff representation of the content of a file before
+    and after a commit for a given git repository, commit hash and file path.
+    """
+    git_repo = pydriller.GitRepository(repo_string)
+    commit = git_repo.get_commit(commit_hash)
+    for modification in commit.modifications:
+        if modification.file_path == file_path:
+            parsed_lines = git_repo.parse_diff(modification.diff)
 
-#             deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
-#             added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
+            deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
+            added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
-#             pre_to_post, edits = identify_edits(deleted_lines, added_lines)
+            pre_to_post, edits = identify_edits(deleted_lines, added_lines)
 
-#             post_source_code = modification.source_code.split('\n')
+            post_source_code = modification.source_code.split('\n')
 
-#             max_line_no = max(max(deleted_lines.keys()),
-#                               max(added_lines.keys()),
-#                               len(post_source_code))
+            max_line_no = max(max(deleted_lines.keys()),
+                              max(added_lines.keys()),
+                              len(post_source_code))
 
-#             pre = []
-#             post = []
-#             action = []
-#             code = []
+            pre_line_no = []
+            post_line_no = []
+            action = []
+            code = []
 
-#             pre = 1
-#             post = 1
-#             while max(pre, post) < max_line_no:
-#                 if pre in edits.keys():
-#                     cur = pre
-#                     for i in range(edits[cur][0]):
-#                         pre.append(pre)
-#                         post.append(None)
-#                         action.append('-')
-#                         code.append(deleted_lines[pre])
-#                         pre += 1
-#                     for i in range(edits[cur][2]):
-#                         pre.append(None)
-#                         post.append(post)
-#                         action.append('+')
-#                         code.append(added_lines[post])
-#                         post += 1
-#                 else:
-#                     if pre in pre_to_post.keys():
-#                         # if pre is not in the dictionary nothing has changed
-#                         if post < pre_to_post[pre]:
-#                             # a edit has been added
-#                             for i in range(pre_to_post[pre] - post):
-#                                 pre.append(None)
-#                                 post.append(post)
-#                                 action.append('+')
-#                                 code.append(added_lines[post])
-#                                 post += 1
+            pre_counter = 1
+            post_counter = 1
+            while max(pre_counter, post_counter) < max_line_no:
+                if pre_counter in edits.keys():
+                    cur = pre_counter
+                    for i in range(edits[cur][0]):
+                        pre_line_no.append(pre_counter)
+                        post_line_no.append(None)
+                        action.append('-')
+                        code.append(deleted_lines[pre_counter])
+                        pre_counter += 1
+                    for i in range(edits[cur][2]):
+                        pre_line_no.append(None)
+                        post_line_no.append(post_counter)
+                        action.append('+')
+                        code.append(added_lines[post_counter])
+                        post_counter += 1
+                else:
+                    if pre_counter in pre_to_post.keys():
+                        # if pre is not in the dictionary nothing has changed
+                        if post_counter < pre_to_post[pre_counter]:
+                            # a edit has been added
+                            for i in range(pre_to_post[pre_counter] - post_counter):
+                                pre_line_no.append(None)
+                                post_line_no.append(post_counter)
+                                action.append('+')
+                                code.append(added_lines[post_counter])
+                                post_counter += 1
 
-#                     pre.append(pre)
-#                     post.append(post)
-#                     action.append(None)
-#                     code.append(post_source_code[post - 1]) # minus one as list starts from 0
-#                     pre += 1
-#                     post += 1
+                    pre_line_no.append(pre_counter)
+                    post_line_no.append(post_counter)
+                    action.append(None)
+                    code.append(post_source_code[post_counter - 1]) # -1 as list starts from 0
+                    pre_counter += 1
+                    post_counter += 1
 
-#     return pd.DataFrame({'pre': pre, 'post': post, 'action': action, 'code': code})
+    return pd.DataFrame({'pre': pre_line_no, 'post': post_line_no, 'action': action, 'code': code})
 
 
 # THIS FUNCTIONS NEEDS TO BE REWRITTEN BASED ON THE NEW RESULTS

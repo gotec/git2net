@@ -276,9 +276,6 @@ def process_commit(args):
     git_repo = pydriller.GitRepository(args['repo_string'])
     commit = git_repo.get_commit(args['commit_hash'])
 
-    if commit.merge:
-        return {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
-
     df_edits = pd.DataFrame()
 
     # parse commit
@@ -298,6 +295,11 @@ def process_commit(args):
     c['merge'] = commit.merge
     c['in_main_branch'] = commit.in_main_branch
     c['branches'] = ','.join(commit.branches)
+
+    if commit.merge:
+        return {'commit': pd.DataFrame(c, index=[0]), 'edits': df_edits}
+
+
 
     # parse modification
     for modification in tqdm(commit.modifications, leave=False, desc='modifications'):

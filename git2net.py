@@ -201,7 +201,7 @@ def extract_edits(git_repo, commit, mod, use_blocks=False):
                                        mod.old_path)
             blame_info = parse_porcelain_blame(blame)
 
-    for _, edit in tqdm(edits.iterrows(), leave=False, desc='edits'):
+    for _, edit in tqdm(edits.iterrows(), leave=False, desc='edits', total=len(edits)):
         e = {}
         e['mod_filename'] = mod.filename
         e['mod_new_path'] = path
@@ -372,7 +372,7 @@ def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=N
 
 
 def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
-                          num_processes=os.cpu_count(), chunksize=1, exclude=None, _p_commits=[]):
+                          no_of_processes=os.cpu_count(), chunksize=1, exclude=None, _p_commits=[]):
     git_repo = pydriller.GitRepository(repo_string)
     exclude_paths = []
     if exclude:
@@ -384,9 +384,9 @@ def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
             for commit in git_repo.get_list_commits() if commit.hash not in _p_commits]
 
     con = sqlite3.connect(sqlite_db_file)
-    p = Pool(num_processes)
+    p = Pool(no_of_processes)
 
-    with tqdm(total=len(args), desc='Parallel ({0} processes)'.format(num_processes)) as pbar:
+    with tqdm(total=len(args), desc='Parallel ({0} processes)'.format(no_of_processes)) as pbar:
         for _, result in enumerate(p.imap_unordered(process_commit, args, chunksize=chunksize)):
             if not result['commit'].empty:
                 result['commit'].to_sql('commits', con, if_exists='append')
@@ -748,7 +748,7 @@ def get_unified_changes(repo_string, commit_hash, file_path):
 
 
 def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
-                  num_processes=os.cpu_count(), chunksize=1, exclude=[]):
+                  no_of_processes=os.cpu_count(), chunksize=1, exclude=[]):
 
     if os.path.exists(sqlite_db_file):
         try:
@@ -810,9 +810,9 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
             con.commit()
             p_commits = []
 
-    if num_processes > 1:
+    if no_of_processes > 1:
         process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
-                              use_blocks=use_blocks, num_processes=num_processes,
+                              use_blocks=use_blocks, no_of_processes=no_of_processes,
                               chunksize=chunksize, exclude=exclude, _p_commits=p_commits)
     else:
         process_repo_serial(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
@@ -840,4 +840,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     mine_git_repo(args.repo, args.outfile, use_blocks=args.use_blocks,
-                  num_processes=args.numprocesses, chunksize=args.chunksize, exclude=args.exclude)
+                  no_of_processes=args.numprocesses, chunksize=args.chunksize, exclude=args.exclude)

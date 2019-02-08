@@ -204,7 +204,8 @@ def parse_porcelain_blame(blame):
                 filename = entries[1]
     return pd.DataFrame(l)
 
-def extract_edits(git_repo, commit, mod, use_blocks=False, extract_original_line_num=False):
+
+def extract_edits(git_repo, commit, mod, use_blocks=False):
 
     #print(commit.hash, mod.filename)
 
@@ -223,12 +224,10 @@ def extract_edits(git_repo, commit, mod, use_blocks=False, extract_original_line
         if sum(edits.loc[:, 'number of deleted lines']) > 0:
             # otherwise no blame is required as no lines are to be traced back
             assert len(commit.parents) == 1
-            blame = git_repo.git.blame(commit.parents[0], ['-C', '--show-number', '--porcelain'], mod.old_path)
+            blame = git_repo.git.blame(commit.parents[0],
+                                       ['-C', '--show-number', '--porcelain'],
+                                       mod.old_path)
             blame_info = parse_porcelain_blame(blame)
-            #blame_info.to_csv('blame.csv')
-
-    #edits.to_csv('out.csv')
-
 
     for _, edit in edits.iterrows():
         e = {}
@@ -369,18 +368,15 @@ def process_commit(args):
                 df_edits = df_edits.append(e, ignore_index=True, sort=True)
             else:
                 df_edits = df_edits.append(extract_edits(git_repo, commit, modification,
-                                use_blocks=args['use_blocks'],
-                                extract_original_line_num=args['extract_original_line_num']),
-                            ignore_index=True, sort=True)
+                                                         use_blocks=args['use_blocks']),
+                                           ignore_index=True, sort=True)
 
     df_commit = pd.DataFrame(c, index=[0])
 
     return {'commit': df_commit, 'edits': df_edits}
 
 
-def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False,
-                        extract_original_line_num=False, exclude=None,
-                        _p_commits=[]):
+def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=None, _p_commits=[]):
     git_repo = pydriller.GitRepository(repo_string)
     exclude_paths = []
     if exclude:
@@ -396,8 +392,7 @@ def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False,
 
     for commit in tqdm(commits, desc='Serial'):
         args = {'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
-                'exclude_paths': exclude_paths,
-                'extract_original_line_num': extract_original_line_num}
+                'exclude_paths': exclude_paths}
         result = process_commit(args)
 
         if not result['commit'].empty:
@@ -407,8 +402,7 @@ def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False,
 
 
 def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
-                          extract_original_line_num=False, num_processes=os.cpu_count(),
-                          chunksize=1, exclude=None, _p_commits=[]):
+                          num_processes=os.cpu_count(), chunksize=1, exclude=None, _p_commits=[]):
     git_repo = pydriller.GitRepository(repo_string)
     exclude_paths = []
     if exclude:
@@ -416,8 +410,7 @@ def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
             exclude_paths = [x.strip() for x in f.readlines()]
 
     args = [{'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
-             'exclude_paths': exclude_paths,
-             'extract_original_line_num': extract_original_line_num}
+             'exclude_paths': exclude_paths}
             for commit in git_repo.get_list_commits() if commit.hash not in _p_commits]
 
     con = sqlite3.connect(sqlite_db_file)
@@ -528,7 +521,8 @@ def extract_editing_paths(sqlite_db_file, file_paths=False, with_start=False, me
                 node_info['colors'][node] = 'gray'
             elif node.startswith('deleted line'):
                 node_info['colors'][node] = '#A8322D' # red
-            elif (file_path in file_dag.predecessors[node]) and (len(file_dag.successors[node]) == 0):
+            elif (file_path in file_dag.predecessors[node]) and \
+                 (len(file_dag.successors[node]) == 0):
                 node_info['colors'][node] = '#5B4E77' # purple
             elif file_path in file_dag.predecessors[node]:
                 node_info['colors'][node] = '#218380' # green
@@ -593,70 +587,70 @@ def identify_file_renaming(repo_string):
     return dag, aliases
 
 
-def get_unified_changes(repo_string, commit_hash, file_path):
-    """
-    Returns dataframe with github-like unified diff representation of the content of a file before
-    and after a commit for a given git repository, commit hash and file path.
-    """
-    git_repo = pydriller.GitRepository(repo_string)
-    commit = git_repo.get_commit(commit_hash)
-    for modification in commit.modifications:
-        if modification.file_path == file_path:
-            parsed_lines = git_repo.parse_diff(modification.diff)
+# def get_unified_changes(repo_string, commit_hash, file_path):
+#     """
+#     Returns dataframe with github-like unified diff representation of the content of a file before
+#     and after a commit for a given git repository, commit hash and file path.
+#     """
+#     git_repo = pydriller.GitRepository(repo_string)
+#     commit = git_repo.get_commit(commit_hash)
+#     for modification in commit.modifications:
+#         if modification.file_path == file_path:
+#             parsed_lines = git_repo.parse_diff(modification.diff)
 
-            deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
-            added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
+#             deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
+#             added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
-            pre_to_post, edits = identify_edits(deleted_lines, added_lines)
+#             pre_to_post, edits = identify_edits(deleted_lines, added_lines)
 
-            post_source_code = modification.source_code.split('\n')
+#             post_source_code = modification.source_code.split('\n')
 
-            max_line_no = max(max(deleted_lines.keys()),
-                              max(added_lines.keys()),
-                              len(post_source_code))
+#             max_line_no = max(max(deleted_lines.keys()),
+#                               max(added_lines.keys()),
+#                               len(post_source_code))
 
-            pre = []
-            post = []
-            action = []
-            code = []
+#             pre = []
+#             post = []
+#             action = []
+#             code = []
 
-            pre = 1
-            post = 1
-            while max(pre, post) < max_line_no:
-                if pre in edits.keys():
-                    cur = pre
-                    for i in range(edits[cur][0]):
-                        pre.append(pre)
-                        post.append(None)
-                        action.append('-')
-                        code.append(deleted_lines[pre])
-                        pre += 1
-                    for i in range(edits[cur][2]):
-                        pre.append(None)
-                        post.append(post)
-                        action.append('+')
-                        code.append(added_lines[post])
-                        post += 1
-                else:
-                    if pre in pre_to_post.keys():
-                        # if pre is not in the dictionary nothing has changed
-                        if post < pre_to_post[pre]:
-                            # a edit has been added
-                            for i in range(pre_to_post[pre] - post):
-                                pre.append(None)
-                                post.append(post)
-                                action.append('+')
-                                code.append(added_lines[post])
-                                post += 1
+#             pre = 1
+#             post = 1
+#             while max(pre, post) < max_line_no:
+#                 if pre in edits.keys():
+#                     cur = pre
+#                     for i in range(edits[cur][0]):
+#                         pre.append(pre)
+#                         post.append(None)
+#                         action.append('-')
+#                         code.append(deleted_lines[pre])
+#                         pre += 1
+#                     for i in range(edits[cur][2]):
+#                         pre.append(None)
+#                         post.append(post)
+#                         action.append('+')
+#                         code.append(added_lines[post])
+#                         post += 1
+#                 else:
+#                     if pre in pre_to_post.keys():
+#                         # if pre is not in the dictionary nothing has changed
+#                         if post < pre_to_post[pre]:
+#                             # a edit has been added
+#                             for i in range(pre_to_post[pre] - post):
+#                                 pre.append(None)
+#                                 post.append(post)
+#                                 action.append('+')
+#                                 code.append(added_lines[post])
+#                                 post += 1
 
-                    pre.append(pre)
-                    post.append(post)
-                    action.append(None)
-                    code.append(post_source_code[post - 1]) # minus one as list starts from 0
-                    pre += 1
-                    post += 1
+#                     pre.append(pre)
+#                     post.append(post)
+#                     action.append(None)
+#                     code.append(post_source_code[post - 1]) # minus one as list starts from 0
+#                     pre += 1
+#                     post += 1
 
-    return pd.DataFrame({'pre': pre, 'post': post, 'action': action, 'code': code})
+#     return pd.DataFrame({'pre': pre, 'post': post, 'action': action, 'code': code})
 
 
 # THIS FUNCTIONS NEEDS TO BE REWRITTEN BASED ON THE NEW RESULTS
@@ -783,22 +777,17 @@ def get_unified_changes(repo_string, commit_hash, file_path):
 #     return dag
 
 
-def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False, extract_original_line_num=False,
+def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
                   num_processes=os.cpu_count(), chunksize=1, exclude=[]):
-
-    if use_blocks and extract_original_line_num:
-        raise Exception("Options 'use blocks' and 'extract original line num' are incompatible")
 
     if os.path.exists(sqlite_db_file):
         try:
             with sqlite3.connect(sqlite_db_file) as con:
-                prev_method, prev_repository, prev_extract_original_line_num = con.execute(
-                    """SELECT method, repository, extract_original_line_num
-                       FROM _metadata""").fetchall()[0]
+                prev_method, prev_repository = con.execute("""SELECT method, repository
+                                                              FROM _metadata""").fetchall()[0]
 
                 if (prev_method == 'blocks' if use_blocks else 'lines') and \
-                   (prev_repository == repo_string) and \
-                   (prev_extract_original_line_num == prev_extract_original_line_num):
+                   (prev_repository == repo_string):
                     try:
                         p_commits = set(x[0]
                             for x in con.execute("SELECT hash FROM commits").fetchall())
@@ -835,42 +824,29 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False, extract_origina
             con.execute("""CREATE TABLE _metadata ('created with',
                                                    'repository',
                                                    'date',
-                                                   'method',
-                                                   'extract_original_line_num')""")
+                                                   'method')""")
             con.execute("""INSERT INTO _metadata ('created with',
                                                   'repository',
                                                   'date',
-                                                  'method',
-                                                  'extract_original_line_num')
+                                                  'method')
                         VALUES (:version,
                                 :repository,
                                 :date,
-                                :method,
-                                :extract_original_line_num)""",
+                                :method)""",
                         {'version': 'git2net alpha',
                          'repository': repo_string,
                          'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                         'method': 'blocks' if use_blocks else 'lines',
-                         'extract_original_line_num': extract_original_line_num})
+                         'method': 'blocks' if use_blocks else 'lines'})
             con.commit()
             p_commits = []
 
-    # if extract_original_line_num:
-    #     _, aliases = identify_file_renaming(repo_string)
-    # else:
-    #     aliases=None
-
     if num_processes > 1:
         process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
-                              use_blocks=use_blocks,
-                              extract_original_line_num=extract_original_line_num,
-                              num_processes=num_processes, chunksize=chunksize, exclude=exclude,
-                              _p_commits=p_commits)
+                              use_blocks=use_blocks, num_processes=num_processes,
+                              chunksize=chunksize, exclude=exclude, _p_commits=p_commits)
     else:
         process_repo_serial(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
-                            use_blocks=use_blocks,
-                            extract_original_line_num=extract_original_line_num, exclude=exclude,
-                            _p_commits=p_commits)
+                            use_blocks=use_blocks, exclude=exclude, _p_commits=p_commits)
 
 
 
@@ -883,12 +859,6 @@ if __name__ == "__main__":
         help='Compare added and deleted blocks of code rather than lines.', dest='use_blocks',
         action='store_true')
     parser.set_defaults(use_blocks=False)
-    parser.add_argument('--extract_original_line_num',
-        help='Traces back line number for each edit to the original commit. Required to ' +
-              'construct editing paths. Cannot be used with --use-blocks. Very computation ' +
-              'intensive.', dest='extract_original_line_num',
-        action='store_true')
-    parser.set_defaults(extract_original_line_num=False)
     parser.add_argument('--numprocesses',
         help='Number of CPU cores used for multi-core processing. Defaults to number of CPU cores.',
         default=os.cpu_count(), type=int)
@@ -900,5 +870,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     mine_git_repo(args.repo, args.outfile, use_blocks=args.use_blocks,
-                  extract_original_line_num=args.extract_original_line_num,
                   num_processes=args.numprocesses, chunksize=args.chunksize, exclude=args.exclude)

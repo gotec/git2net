@@ -3,3 +3,4 @@
 *.db-journal
 *.pyc
 *.html
+*.csv

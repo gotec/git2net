@@ -170,6 +170,15 @@ def extrapolate_line_mapping(mapping, line_no):
         raise Exception("Unexpected error in 'extrapolate_line_mapping'.")
 
 
+def get_commit_dag(repo_string):
+    git_repo = pydriller.GitRepository(repo_string)
+    commits = [x[0:7] for x in git_repo.get_list_commits()]
+    dag = pp.DAG()
+    for node in commits:
+        for parent in node.parents:
+            dag.add_edge(parent[0:7], node)
+    return dag
+
 def get_paths_to_origin(git_repo, pre_hash, post_hash):
     dag = pp.DAG()
     colors = {}

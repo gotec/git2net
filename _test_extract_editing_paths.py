@@ -41,12 +41,13 @@ df.replace('eliassi', 'Tina Eliassi-Rad', inplace=True)
 import sqlite3
 import importlib
 import git2net
+import pathpy as pp
 importlib.reload(git2net)
-sqlite_db_file = 'out.db'
+sqlite_db_file = 'kdd_anomalies.db'
 con = sqlite3.connect(sqlite_db_file)
 path = con.execute("SELECT repository FROM _metadata").fetchall()[0][0]
 dag, aliases = git2net.identify_file_renaming(path)
-dag
+pp.visualisation.plot(dag, width=1500, height=1500)
 
 
 #%%

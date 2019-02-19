@@ -6,7 +6,6 @@ import argparse
 import sys
 
 from multiprocessing import Pool
-from multiprocessing import Semaphore
 
 import pandas as pd
 from tqdm import tqdm
@@ -745,7 +744,7 @@ def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
     p = Pool(no_of_processes)
 
     with tqdm(total=len(args), desc='Parallel ({0} processes)'.format(no_of_processes)) as pbar:
-        for _, result in enumerate(p.imap_unordered(process_commit, args, chunksize=chunksize)):
+        for result in p.imap_unordered(process_commit, args, chunksize=chunksize):
             if not result['commit'].empty:
                 result['commit'].to_sql('commits', con, if_exists='append')
             if not result['edits'].empty:

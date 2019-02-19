@@ -664,7 +664,12 @@ def process_commit(args):
                     exclude_file = True
             if not exclude_file:
                 modification_info = {}
-                file_contents = git_repo.git.show('{}:{}'.format(commit.hash, edited_file_path))
+                try:
+                    file_contents = git_repo.git.show('{}:{}'.format(commit.hash, edited_file_path))
+                except GitCommandError:
+                    # A GitCommandError occurs if the file was deleted. In this case it currently
+                    # has no content.
+                    file_contents = ''
                 l = lizard.analyze_file.analyze_source_code(edited_file_path, file_contents)
 
                 modification_info['filename'] = edited_file_path.split(os.sep)[-1]

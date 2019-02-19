@@ -8,7 +8,7 @@ import sys
 from multiprocessing import Pool
 
 import pandas as pd
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import numpy as np
 from scipy.stats import entropy
 
@@ -666,24 +666,43 @@ def process_commit(args):
                 modification_info = {}
                 try:
                     file_contents = git_repo.git.show('{}:{}'.format(commit.hash, edited_file_path))
+                    l = lizard.analyze_file.analyze_source_code(edited_file_path, file_contents)
+
+                    modification_info['filename'] = edited_file_path.split(os.sep)[-1]
+                    modification_info['new_path'] = edited_file_path
+                    modification_info['old_path'] = edited_file_path
+                    modification_info['cyclomatic_complexity_of_file'] = l.CCN
+                    modification_info['lines_of_code_in_file'] = l.nloc
+                    modification_info['modification_type'] = 'merge_self_accept'
+
+                    df_edits = df_edits.append(extract_edits_merge(git_repo, commit,
+                                                                   modification_info,
+                                                                   use_blocks=args['use_blocks'],
+                                                                   blame_C=args['blame_C']),
+                                               ignore_index=True, sort=True)
                 except GitCommandError:
                     # A GitCommandError occurs if the file was deleted. In this case it currently
                     # has no content.
-                    file_contents = ''
-                l = lizard.analyze_file.analyze_source_code(edited_file_path, file_contents)
 
-                modification_info['filename'] = edited_file_path.split(os.sep)[-1]
-                modification_info['new_path'] = edited_file_path
-                modification_info['old_path'] = edited_file_path
-                modification_info['cyclomatic_complexity_of_file'] = l.CCN
-                modification_info['lines_of_code_in_file'] = l.nloc
-                modification_info['modification_type'] = 'merge_self_accept'
+                    # Get filenames from all modifications in merge commit.
+                    paths = [m.old_path for m in commit.modifications]
 
-                df_edits = df_edits.append(extract_edits_merge(git_repo, commit,
-                                                                modification_info,
-                                                                use_blocks=args['use_blocks'],
-                                                                blame_C=args['blame_C']),
-                                            ignore_index=True, sort=True)
+                    # Analyse changes if modification was recorded. Else, the deletions were made
+                    # before the merge.
+                    if edited_file_path in paths:
+                        modification_info['filename'] = edited_file_path.split(os.sep)[-1]
+                        modification_info['new_path'] = None # File was deleted.
+                        modification_info['old_path'] = edited_file_path
+                        modification_info['cyclomatic_complexity_of_file'] = 0
+                        modification_info['lines_of_code_in_file'] = 0
+                        modification_info['modification_type'] = 'merge_self_accept'
+
+                        df_edits = df_edits.append(extract_edits_merge(git_repo, commit,
+                                                                    modification_info,
+                                                                    use_blocks=args['use_blocks'],
+                                                                    blame_C=args['blame_C']),
+                                                   ignore_index=True, sort=True)
+
     else:
         for modification in tqdm(commit.modifications, leave=False, desc='modifications'):
             exclude_file = False

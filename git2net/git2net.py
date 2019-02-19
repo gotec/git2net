@@ -476,7 +476,7 @@ def extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C'
 
     # Next, metadata on all identified edits is extracted and added to a pandas DataFrame.
     edits_info = pd.DataFrame()
-    for _, edit in tqdm(edits.iterrows(), leave=False, desc='edits', total=len(edits)):
+    for _, edit in tqdm(edits.iterrows(), leave=False, desc='edits ' + commit.hash[0:7] + ' ' + modification.new_path, total=len(edits)):
         e = {}
         # Extract general information.
         e['filename'] = modification.filename
@@ -562,7 +562,7 @@ def extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, b
 
         _, edits = identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
 
-        for _, edit in tqdm(edits.iterrows(), leave=False, desc='edits', total=len(edits)):
+        for _, edit in tqdm(edits.iterrows(), leave=False, desc='edits ' + commit.hash[0:7] + ' ' + modification.new_path, total=len(edits), total=len(edits)):
             e = {}
             # Extract general information.
             e['commit_hash'] = commit.hash
@@ -704,7 +704,7 @@ def process_commit(args):
                                                    ignore_index=True, sort=True)
 
     else:
-        for modification in tqdm(commit.modifications, leave=False, desc='modifications'):
+        for modification in tqdm(commit.modifications, leave=False, desc='modifications' + commit.hash[0:7]):
             exclude_file = False
             for x in args['exclude_paths']:
                 if modification.new_path:

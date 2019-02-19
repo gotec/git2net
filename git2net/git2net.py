@@ -562,7 +562,7 @@ def extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, b
 
         _, edits = identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
 
-        for _, edit in tqdm(edits.iterrows(), leave=False, desc='edits ' + commit.hash[0:7] + ' ' + modification.new_path, total=len(edits), total=len(edits)):
+        for _, edit in tqdm(edits.iterrows(), leave=False, desc='edits ' + commit.hash[0:7] + ' ' + modification.new_path, total=len(edits)):
             e = {}
             # Extract general information.
             e['commit_hash'] = commit.hash

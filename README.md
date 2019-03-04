@@ -18,7 +18,7 @@ platforms. Assuming you are using `pip`, you can install latest version of `git2
 
 This will also install the necessary dependencies.
 
-## How to cite `git2net`
+## How to cite git2net
 
 Our contribution titled "git2net -- Mining Time-Stamped Co-Editing Networks from Large git
 Repositories" has been accepted for MSR 2019 and will be published as part of the proceedings. This

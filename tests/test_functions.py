@@ -143,7 +143,13 @@ def test_extract_editing_paths(repo_string):
 
 dag, paths, node_info, edge_info = test_extract_editing_paths('test_repos/test_repo_1')
 pp.visualisation.plot(dag, width=1000, height=1000, node_color=node_info['colors'],
-                      edge_color=edge_info['colors'])
+                      edge_color=edge_info['colors'], edge_width=1.0, label_opacity=0, node_size=8.0)
+for edge in edge_info['colors']:
+    print(edge_info['colors'][edge])
+    if edge_info['colors'][edge] == 'white':
+        edge_info['colors'][edge] = 'black'
+pp.visualisation.export_html(dag, 'editing_paths.html', width=1500, height=1500, node_color=node_info['colors'],
+                      edge_color=edge_info['colors'], edge_width=1.0, label_opacity=0, node_size=8.0)
 
 
 

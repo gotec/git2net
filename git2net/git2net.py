@@ -967,24 +967,12 @@ def extract_editing_paths(sqlite_db_file, commit_hashes=False, file_paths=False,
             node_info['colors'][node] = '#218380' # green
         else:
             node_info['colors'][node] = '#73D2DE' # light blue
-    #     elif node.startswith('deleted line'):
-    #         node_info['colors'][node] = '#A8322D' # red
-    #     elif (file_path in dag.predecessors[node]) and \
-    #          (len(dag.successors[node]) == 0):
-    #         node_info['colors'][node] = '#5B4E77' # purple
-    #     elif file_path in dag.predecessors[node]:
-    #         node_info['colors'][node] = '#218380' # green
-    #     elif len(dag.successors[node]) == 0:
-    #         node_info['colors'][node] = '#2E5EAA' # blue
-    #     else:
-    #         node_info['colors'][node] = '#73D2DE' # light blue
-
 
     if not with_start:
         for file_path in file_paths:
             dag.remove_node(file_path)
 
-    #assert dag.is_acyclic is True
+    assert dag.is_acyclic is True
 
     paths = pp.path_extraction.paths_from_dag(dag)
 

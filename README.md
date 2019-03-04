@@ -9,7 +9,8 @@ from git repositories.
 
 ## Download and installation
 
-`git2net` is pure python code. It has no platform-specific dependencies and should thus work on all platforms. Assuming you are using `pip`, you can install latest version of `git2net` by running:
+`git2net` is pure python code. It has no platform-specific dependencies and should thus work on all
+platforms. Assuming you are using `pip`, you can install latest version of `git2net` by running:
 
 ```
 > pip install git2net

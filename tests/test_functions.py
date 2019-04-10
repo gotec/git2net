@@ -1,4 +1,3 @@
-#%%
 import git2net
 import pathpy as pp
 import pytest
@@ -6,11 +5,16 @@ import pydriller
 import numpy as np
 import lizard
 import os
+from datetime import datetime
 
-#%%
 @pytest.yield_fixture(scope="module")
 def repo_string():
     yield 'test_repos/test_repo_1'
+
+@pytest.yield_fixture(scope="module")
+def sqlite_db_file():
+    yield 'tests/test_repo_1.db'
+
 
 def test_get_commit_dag(repo_string):
     dag = git2net.get_commit_dag(repo_string)
@@ -27,7 +31,10 @@ def test_get_commit_dag(repo_string):
                       ('5606e82', '1adc153'), ('5606e82', 'e8be9c6'), ('e8be9c6', '97b5e43'),
                       ('1adc153', '97b5e43'), ('97b5e43', '1c038ed'), ('1c038ed', '94a9da2'),
                       ('94a9da2', '83214bc')]
+    dag.topsort()
     assert list(dag.edges.keys()) == expected_edges
+    assert dag.is_acyclic
+
 
 def test_extract_edits_1(repo_string):
     commit_hash = 'b17c2c321ce8d299de3d063ca0a1b0b363477505'
@@ -37,12 +44,14 @@ def test_extract_edits_1(repo_string):
     commit = git_repo.get_commit(commit_hash)
     for mod in commit.modifications:
         if mod.filename == filename:
-            df = git2net.extract_edits(git_repo, commit, mod, use_blocks=False, blame_C='CCC4')
+            df = git2net.extraction._extract_edits(git_repo, commit, mod, use_blocks=False,
+                                                  blame_C='CCC4')
     assert len(df) == 3
+    print(df)
     assert df.at[0, 'original_commit_addition'] == 'e4448e87541d19d139b9d033b2578941a53d1f97'
     assert df.at[1, 'original_commit_addition'] == '6b531fcb57d5b9d98dd983cb65357d82ccca647b'
-    # note that this line is not found as it does not end with a newline while the original line did
-    assert df.at[2, 'original_commit_addition'] is None
+    assert df.at[2, 'original_commit_addition'] == 'e4448e87541d19d139b9d033b2578941a53d1f97'
+
 
 def test_extract_edits_2(repo_string):
     commit_hash = 'b17c2c321ce8d299de3d063ca0a1b0b363477505'
@@ -50,11 +59,14 @@ def test_extract_edits_2(repo_string):
 
     git_repo = pydriller.GitRepository(repo_string)
     commit = git_repo.get_commit(commit_hash)
+    df = None
     for mod in commit.modifications:
         if mod.filename == filename:
-            df = git2net.extract_edits(git_repo, commit, mod, use_blocks=True, blame_C='CCC4')
+            df = git2net.extraction._extract_edits(git_repo, commit, mod, use_blocks=True,
+                                                  blame_C='CCC4')
     assert len(df) == 1
     assert df.at[0, 'original_commit_addition'] == 'not available with use_blocks'
+
 
 def test_identify_edits(repo_string):
     commit_hash = 'f343ed53ee64717f85135c4b8d3f6bd018be80ad'
@@ -71,7 +83,7 @@ def test_identify_edits(repo_string):
     deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
     added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
-    _, edits = git2net.identify_edits(deleted_lines, added_lines, use_blocks=False)
+    _, edits = git2net.extraction._identify_edits(deleted_lines, added_lines, use_blocks=False)
     assert list(edits.type) == ['deletion', 'replacement', 'deletion', 'replacement', 'addition',
                                 'addition', 'addition']
 
@@ -80,109 +92,117 @@ def test_process_commit(repo_string):
     commit_hash = 'f343ed53ee64717f85135c4b8d3f6bd018be80ad'
     args = {'repo_string': repo_string, 'commit_hash': commit_hash, 'use_blocks': False,
              'exclude_paths': [], 'blame_C': '-C'}
-    res_dict = git2net.process_commit(args)
+    res_dict = git2net.extraction._process_commit(args)
     assert list(res_dict.keys()) == ['commit', 'edits']
 
-####################################################################################################
 
-# repo_string = 'test_repos/test_repo_1'
-# git_repo = pydriller.GitRepository(repo_string)
-# commit = git_repo.get_commit('deff6c8997991a0b559cee3ef70af223fbb85ec8')
-# edited_file_path = 'text_file.txt'
-
-# edited_file_paths = git2net.get_edited_file_paths_since_split(git_repo, commit)
-# for edited_file_path in edited_file_paths:
-#     modification_info = {}
-#     file_contents = git_repo.git.show('{}:{}'.format(commit.hash, edited_file_path))
-#     l = lizard.analyze_file.analyze_source_code(edited_file_path, file_contents)
-
-#     modification_info['filename'] = edited_file_path.split(os.sep)[-1]
-#     modification_info['new_path'] = edited_file_path
-#     modification_info['old_path'] = edited_file_path
-#     modification_info['cyclomatic_complexity_of_file'] = l.CCN
-#     modification_info['lines_of_code_in_file'] = l.nloc
-#     modification_info['modification_type'] = 'merge_self_accept'
-
-#     edits_info = git2net.extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, blame_C='-C')
-
-####################################################################################################
-
-# repo_string = 'test_repos/test_repo_1'
-# git_repo = pydriller.GitRepository(repo_string)
-# commit = git_repo.get_commit('96025072a3e1b2f466ef56053bbdf4c9c0e927f0')
-# edited_file_path = 'text_file.txt'
-
-# for modification in commit.modifications:
-#     modification_info = {}
-#     modification_info['filename'] = modification.filename
-#     modification_info['new_path'] = modification.new_path
-#     modification_info['old_path'] = modification.old_path
-#     modification_info['cyclomatic_complexity_of_file'] = modification.complexity
-#     modification_info['lines_of_code_in_file'] = modification.nloc
-#     modification_info['modification_type'] = modification.change_type.name
-
-#     edits_info = git2net.extract_edits_merge(git_repo, commit, modification_info, use_blocks=True, blame_C='-C')
-
-####################################################################################################
+def test_get_unified_changes(repo_string):
+    commit_hash = 'e8be9c6abe76c809a567866e411350e76eb45e49'
+    filename = 'text_file.txt'
+    unified_changes = git2net.get_unified_changes(repo_string, commit_hash, filename)
+    expected_code = ['A0', 'B1', 'B2', 'B3', 'A1', 'C2', 'C3', 'C4', 'B2', 'B3', 'B4', 'A5', 'A6',
+                     'A7', 'F8', 'F9', 'F10', 'F11', 'F12', 'B8', 'B9', 'B10', 'B11', 'B12']
+    assert list(unified_changes.code) == expected_code
 
 
-#%%
-import git2net
-import pathpy as pp
-import pytest
-import pydriller
-import numpy as np
-import lizard
-import os
-
-def test_extract_editing_paths(repo_string):
-    git2net.mine_git_repo(repo_string, 'test.db', blame_C='-C4')
-    commit_hashes = [x.hash for x in pydriller.GitRepository(repo_string).get_list_commits()]#[29]#18]
-    dag, paths, node_info, edge_info = git2net.extract_editing_paths('test.db', commit_hashes, with_start=True)
-    return dag, paths, node_info, edge_info
-
-dag, paths, node_info, edge_info = test_extract_editing_paths('test_repos/test_repo_1')
-pp.visualisation.plot(dag, width=1000, height=1000, node_color=node_info['colors'],
-                      edge_color=edge_info['colors'], edge_width=1.0, label_opacity=0, node_size=8.0)
-for edge in edge_info['colors']:
-    print(edge_info['colors'][edge])
-    if edge_info['colors'][edge] == 'white':
-        edge_info['colors'][edge] = 'black'
-pp.visualisation.export_html(dag, 'editing_paths.html', width=1500, height=1500, node_color=node_info['colors'],
-                      edge_color=edge_info['colors'], edge_width=1.0, label_opacity=0, node_size=8.0)
+def test_mine_git_repo(repo_string, sqlite_db_file):
+    if os.path.exists(sqlite_db_file):
+        os.remove(sqlite_db_file)
+    git2net.mine_git_repo(repo_string, sqlite_db_file, blame_C='CCC4')
+    assert True
 
 
+def test_get_line_editing_paths(sqlite_db_file):
+    paths, dag, node_info, edge_info = git2net.get_line_editing_paths(sqlite_db_file,
+                                                                      with_start=True)
+    assert len(dag.isolate_nodes()) == 0
 
 
+def test_get_commit_editing_paths_1(sqlite_db_file):
+    sqlite_db_file = 'tests/test_repo_1.db'
+
+    paths, dag, node_info, edge_info = git2net.get_commit_editing_paths(sqlite_db_file)
+
+    assert len(dag.isolate_nodes()) == 0
+    assert len(dag.nodes) == 31
+    assert len(dag.successors[None]) == 10
 
 
+def test_get_commit_editing_paths_2(sqlite_db_file):
+    time_from = datetime(2019, 2, 12, 10, 0, 0)
+    time_to = datetime(2019, 2, 12, 11, 0, 0)
+
+    paths, dag, node_info, edge_info = git2net.get_commit_editing_paths(sqlite_db_file,
+                                                                        time_from=time_from,
+                                                                        time_to=time_to)
+
+    assert len(dag.isolate_nodes()) == 0
+    assert len(dag.nodes) == 15
+    assert len(dag.successors[None]) == 6
 
 
+def test_get_commit_editing_paths_3(sqlite_db_file):
+    time_from = datetime(2019, 2, 12, 11, 0, 0)
+    time_to = datetime(2019, 2, 12, 12, 0, 0)
+    filename = 'text_file.txt'
+
+    paths, dag, node_info, edge_info = git2net.get_commit_editing_paths(sqlite_db_file,
+                                                                        time_from=time_from,
+                                                                        time_to=time_to,
+                                                                        filename=filename)
+
+    assert len(dag.isolate_nodes()) == 0
+    assert len(dag.nodes) == 17
+    assert len(dag.successors[None]) == 1
 
 
+def test_get_coediting_network(sqlite_db_file):
+    time_from = datetime(2019, 2, 12, 11, 00, 0)
+    time_to = datetime(2019, 2, 12, 11, 15, 0)
+
+    t, node_info, edge_info = git2net.get_coediting_network(sqlite_db_file, time_from=time_from,
+                                                            time_to=time_to)
+
+    expected_edges = [('Author B', 'Author A', 1549965657),
+                      ('Author A', 'Author B', 1549966134),
+                      ('Author B', 'Author A', 1549966184),
+                      ('Author C', 'Author B', 1549966309),
+                      ('Author C', 'Author A', 1549966309),
+                      ('Author C', 'Author A', 1549966309),
+                      ('Author B', 'Author A', 1549966356),
+                      ('Author B', 'Author A', 1549965738),
+                      ('Author C', 'Author A', 1549966451),
+                      ('Author C', 'Author A', 1549966451),
+                      ('Author C', 'Author A', 1549966451)]
+
+    assert len(set(t.tedges).difference(set(expected_edges))) == 0
 
 
+def test_get_coauthorship_network(sqlite_db_file):
+    time_from = datetime(2019, 2, 12, 11, 00, 0)
+    time_to = datetime(2019, 2, 12, 11, 15, 0)
+
+    n, node_info, edge_info = git2net.get_coauthorship_network(sqlite_db_file, time_from=time_from,
+                                                               time_to=time_to)
+
+    expected_nonzero_rows = [0, 0, 1, 1, 2, 2]
+    expected_nonzero_columns = [1, 2, 0, 2, 0, 1]
+
+    assert list(n.adjacency_matrix().nonzero()[0]) == expected_nonzero_rows
+    assert list(n.adjacency_matrix().nonzero()[1]) == expected_nonzero_columns
 
 
+def test_get_bipartite_network(sqlite_db_file):
+    time_from = datetime(2019, 2, 12, 11, 00, 0)
+    time_to = datetime(2019, 2, 12, 11, 10, 0)
 
+    t, node_info, edge_info = git2net.get_bipartite_network(sqlite_db_file, time_from=time_from,
+                                                            time_to=time_to)
 
+    expected_edges = [('Author A', 'text_file.txt', 1549965641),
+    ('Author B', 'text_file.txt', 1549965657),
+    ('Author A', 'text_file.txt', 1549966134),
+    ('Author B', 'text_file.txt', 1549966184),
+    ('Author B', 'text_file.txt', 1549965738)]
 
-
-
-
-
-
-
-
-
-# def test_identify_file_renaming(repo_string):
-#     dag, aliases = git2net.identify_file_renaming(repo_string)
-#     return dag
-
-# dag = test_identify_file_renaming('test_repos/test_repo_1')
-# pp.visualisation.plot(dag, width=1500, height=1500)
-
-#%%
-
-
-#%%
+    assert len(set(t.tedges).difference(set(expected_edges))) == 0

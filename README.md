@@ -3,26 +3,40 @@
 `git2net` is an Open Source Python package that facilitates the extraction of co-editing networks
 from git repositories.
 
-## What are Co-editing networks
-
-*TK*
-
 ## Download and installation
 
-`git2net` is pure python code. It has no platform-specific dependencies and should thus work on all
+`git2net` is pure `python` code. It has no platform-specific dependencies and thus works on all
 platforms. Assuming you are using `pip`, you can install latest version of `git2net` by running:
 
 ```
 > pip install git2net
 ```
 
-This will also install the necessary dependencies.
+This also installs the necessary dependencies.
+
+## How to use git2net
+
+We have publised some motivating results as well as details on the mining algorithm in "git2net - Mining Time-Stamped Co-Editing Networks from Large git Repositories. Together with the paper we have released a jupyter notebook reproducing the majority of the results shown in the paper on [zenodo.org](https://zenodo.org/record/2587483#.XK4LPENoSCg). This notebook also serves as tutorial introducing the functionality of `git2net`.
 
 ## How to cite git2net
 
-Our contribution titled "git2net -- Mining Time-Stamped Co-Editing Networks from Large git
-Repositories" has been accepted for MSR 2019 and will be published as part of the proceedings. This
-section will be updated once the proceedings are published.
+```
+@article{DBLP:journals/corr/abs-1903-10180,
+  author    = {Christoph Gote and
+               Ingo Scholtes and
+               Frank Schweitzer},
+  title     = {git2net - Mining Time-Stamped Co-Editing Networks from Large git Repositories},
+  journal   = {CoRR},
+  volume    = {abs/1903.10180},
+  year      = {2019},
+  url       = {http://arxiv.org/abs/1903.10180},
+  archivePrefix = {arXiv},
+  eprint    = {1903.10180},
+  timestamp = {Mon, 01 Apr 2019 14:07:37 +0200},
+  biburl    = {https://dblp.org/rec/bib/journals/corr/abs-1903-10180},
+  bibsource = {dblp computer science bibliography, https://dblp.org}
+}
+```
 
 ## License
 

@@ -4,11 +4,11 @@
 import setuptools
 from git2net import __version__
 
-with open("README.md", "r") as fh:
-    long_description = fh.read()
+with open("README.md", "r") as f:
+    long_description = f.read()
 
-install_requirements = []
-setup_requirements = []
+with open('requirements.txt') as f:
+    install_requirements = f.read().splitlines()
 
 setuptools.setup(
     name="git2net",
@@ -29,6 +29,5 @@ setuptools.setup(
     ],
     test_suite='tests',
     keywords='co-editing networks repository mining network analysis',
-    install_requires=install_requirements,
-    setup_requires=setup_requirements
+    install_requires=install_requirements
 )

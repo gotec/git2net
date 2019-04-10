@@ -1,9 +1,12 @@
 #!/usr/bin/python3
 
+#################################################
+# All functions that work on the git repository #
+#################################################
+
 import sqlite3
 import os
 import argparse
-import sys
 
 from multiprocessing import Pool
 
@@ -18,21 +21,22 @@ from Levenshtein import distance as lev_dist
 import datetime
 
 import pathpy as pp
-import copy
 import re
 import lizard
 
 
-def get_block_length(lines, k):
-    """
-    Calculates the length (in number of lines) of a edit of added/deleted lines starting in a given
-    line k.
+def _get_block_length(lines, k):
+    """ Calculates the length (in number of lines) of a edit of added/deleted lines starting in a
+        given line k.
 
-    Parameters
-    ----------
-    @param lines: dictionary of added or deleted lines
-    @param k: line number to check for
+    Args:
+        lines: dictionary of added or deleted lines
+        k: line number to check for
+
+    Returns:
+        block_size: number of lines in the contiguously block that was modified
     """
+
     if k not in lines or (k > 1 and k - 1 in lines):
         edit = False
         block_size = 0
@@ -48,21 +52,29 @@ def get_block_length(lines, k):
     return block_size
 
 
-def identify_edits(deleted_lines, added_lines, use_blocks=False):
-    """
-    Maps line numbers between the pre- and post-commit version of a modification.
+def _identify_edits(deleted_lines, added_lines, use_blocks=False):
+    """ Maps line numbers between the pre- and post-commit version of a modification.
+
+    Args:
+        deleted_lines: dictionary of deleted lines
+        added_lines: dictionary of added lines
+        use_blocks: bool indicating whether or not to use the block approach
+
+    Returns:
+        pre_to_post: dictionary mapping line numbers before and after the commit
+        edits: dataframe with information on edits
     """
 
     # either deleted or added lines must contain items otherwise there would not be a modification
     # to process
-    if len(deleted_lines.keys()) > 0:
+    if len(deleted_lines) > 0:
         max_deleted = max(deleted_lines.keys())
         min_deleted = min(deleted_lines.keys())
     else:
         max_deleted = -1
         min_deleted = np.inf
 
-    if len(added_lines.keys()) > 0:
+    if len(added_lines) > 0:
         max_added = max(added_lines.keys())
         min_added = min(added_lines.keys())
     else:
@@ -89,8 +101,8 @@ def identify_edits(deleted_lines, added_lines, use_blocks=False):
         if use_blocks:
             # compute size of added and deleted edits
             # size is reported as 0 if the line is not in added or deleted lines, respectively
-            length_added_block = get_block_length(added_lines, post)
-            length_deleted_block = get_block_length(deleted_lines, pre)
+            length_added_block = _get_block_length(added_lines, post)
+            length_deleted_block = _get_block_length(deleted_lines, pre)
 
             # replacement if both deleted and added > 0
             # if not both > 0, deletion if deleted > 0
@@ -176,10 +188,29 @@ def identify_edits(deleted_lines, added_lines, use_blocks=False):
 
 
 def text_entropy(text):
-    return entropy([text.count(chr(i)) for i in range(256)], base=2)
+    """ Computes entropy for a given text based on UTF8 alphabet.
+
+    Args:
+        text: string to compute the text entropy for
+
+    Returns:
+        text_entropy: text entropy of the given string
+    """
+
+    text_entropy = entropy([text.count(chr(i)) for i in range(256)], base=2)
+
+    return text_entropy
 
 
 def get_commit_dag(repo_string):
+    """ Extracts commit dag from given path to git repository.
+
+    Args:
+        repo_string: path to the git repository that is mined
+
+    Returns:
+        dag: dag linking successive commits in the same branch
+    """
     git_repo = pydriller.GitRepository(repo_string)
     commits = [x.hash[0:7] for x in git_repo.get_list_commits()]
     dag = pp.DAG()
@@ -189,21 +220,39 @@ def get_commit_dag(repo_string):
     return dag
 
 
-def parse_blame_C(blame_C):
+def _parse_blame_C(blame_C):
+    """ Converts the input provided for the copy option in git blame to a list of options required
+        as input for gitpython.
+
+    Args:
+        blame_C: string defining how the copy option in git blame is used
+
+    Returns:
+        list_of_arguments: list of parameters for gitpython blame
+    """
     pattern = re.compile("(^$|^-?C{0,3}[0-9]*$)")
     if not pattern.match(blame_C):
         raise Exception("Invalid 'blame_C' supplied.")
     if len(blame_C) == 0:
-        return []
+        list_of_arguments = []
     else:
         if blame_C[0] == '-':
             blame_C = blame_C[1:]
         cs = len(blame_C) - len(blame_C.lstrip('C'))
         num = blame_C.lstrip('C')
-        return ['-C' for i in range(cs - 1)] + ['-C{}'.format(num)]
+        list_of_arguments = ['-C' for i in range(cs - 1)] + ['-C{}'.format(num)]
+    return list_of_arguments
 
 
-def parse_porcelain_blame(blame):
+def _parse_porcelain_blame(blame):
+    """ Parses the porcelain output of git blame and returns content as dataframe.
+
+    Args:
+        blame: porcelain output of git blame
+
+    Returns:
+        blame_info: content of blame as pandas dataframe
+    """
     l = {'original_commit_hash': [],
         'original_line_no': [],
         'original_file_path': [],
@@ -227,10 +276,26 @@ def parse_porcelain_blame(blame):
                 start_of_line_info = False
             elif entries[0] == 'filename':
                 filename = entries[1]
-    return pd.DataFrame(l)
+    blame_info = pd.DataFrame(l)
+    return blame_info
 
-def get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_parent, blame_info_commit,
-                     use_blocks=False):
+
+def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_parent,
+                      blame_info_commit, use_blocks=False):
+    """ Extracts detailed measures for a given edit.
+
+    Args:
+        edit: edit as identified in _identify_edits
+        commit: pydriller commit object containing the edit
+        deleted_lines: dict of added lines
+        added_lines: dict of deleted lines
+        blame_info_parent: blame info for parent commit as output from _parse_porcelain_blame
+        blame_info_commit: blame info for current commit as output from _parse_porcelain_blame
+        use_blocks: bool indicating whether or not to use the block approach
+
+    Returns:
+        e: pandas dataframe containing information on edits
+    """
     # Different actions for different types of edits.
     e = {}
     if edit.type == 'replacement':
@@ -419,12 +484,12 @@ def get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_parent
 
     else:
         print(edit.type)
-        raise Exception("Unexpected error in 'get_edit_details'.")
+        raise Exception("Unexpected error in '_get_edit_details'.")
 
     return e
 
-def extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C'):
-    """Returns dataframe with metadata on edits made in a given modification.
+def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C'):
+    """ Returns dataframe with metadata on edits made in a given modification.
 
     Args:
         git_repo: pydriller GitRepository object
@@ -451,7 +516,7 @@ def extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C'
                               'number_of_added_lines': None,
                               'type': 'file_renaming'}, index=[0])
     else: # If there were lines added or deleted, the specific edits are identified.
-        _, edits = identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
+        _, edits = _identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
 
     # In order to trace the origins of lines e execute git blame is executed. For lines that were
     # deleted with the current commit, the blame needs to be executed on the parent commit. As
@@ -462,17 +527,17 @@ def extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C'
     if len(deleted_lines) > 0:
         assert len(commit.parents) == 1
         blame_parent = git_repo.git.blame(commit.parents[0],
-                                          parse_blame_C(blame_C) +
+                                          _parse_blame_C(blame_C) +
                                           ['-w', '--show-number', '--porcelain'],
                                           modification.old_path)
-        blame_info_parent = parse_porcelain_blame(blame_parent)
+        blame_info_parent = _parse_porcelain_blame(blame_parent)
 
     if len(added_lines) > 0:
         blame_commit = git_repo.git.blame(commit.hash,
-                                          parse_blame_C(blame_C) +
+                                          _parse_blame_C(blame_C) +
                                           ['-w', '--show-number', '--porcelain'],
                                           modification.new_path)
-        blame_info_commit = parse_porcelain_blame(blame_commit)
+        blame_info_commit = _parse_porcelain_blame(blame_commit)
 
     # Next, metadata on all identified edits is extracted and added to a pandas DataFrame.
     edits_info = pd.DataFrame()
@@ -491,14 +556,26 @@ def extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C'
         e['modification_type'] = modification.change_type.name
         e['edit_type'] = edit.type
 
-        e.update(get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_parent,
-                                  blame_info_commit))
+        e.update(_get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_parent,
+                                  blame_info_commit, use_blocks=use_blocks))
 
         edits_info = edits_info.append(e, ignore_index=True, sort=False)
 
     return edits_info
 
-def extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, blame_C='-C'):
+def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, blame_C='-C'):
+    """ Returns dataframe with metadata on edits made in a given modification for merge commits.
+
+    Args:
+        git_repo: pydriller GitRepository object
+        commit: pydriller Commit object
+        modification: pydriller Modification object
+        use_blocks: bool, determins if analysis is performed on block or line basis
+        blame_C: git blame '-C' option. By default, '-C' is used.
+
+    Returns:
+        edits_info: pandas DataFrame object containing metadata on all edits in given modification
+    """
     assert commit.merge
     # With merges, the following cases can occur:
     #   1. Changes of one or more parents are accepted.
@@ -507,10 +584,10 @@ def extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, b
     parent_blames = []
     for parent in commit.parents:
         blame = git_repo.git.blame(parent,
-                                   parse_blame_C(blame_C) +
+                                   _parse_blame_C(blame_C) +
                                    ['-w', '--show-number', '--porcelain'],
                                    modification_info['old_path'])
-        parent_blame = parse_porcelain_blame(blame).rename(
+        parent_blame = _parse_porcelain_blame(blame).rename(
                     columns={'line_content': 'pre_line_content', 'line_number': 'pre_line_number'})
         parent_blame.loc[:, 'pre_commit'] = parent
         parent_blames.append(parent_blame)
@@ -526,10 +603,10 @@ def extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, b
 
     # Then, the current state of the file is obtained by executing git blame on the current commit.
     blame = git_repo.git.blame(commit.hash,
-                               parse_blame_C(blame_C) +
+                               _parse_blame_C(blame_C) +
                                ['-w', '--show-number', '--porcelain'],
                                modification_info['new_path'])
-    current_blame = parse_porcelain_blame(blame).rename(
+    current_blame = _parse_porcelain_blame(blame).rename(
             columns={'line_content': 'post_line_content', 'line_number': 'post_line_number'})
     # Lines that are in both parents but not in current state were actively deleted in the merge.
     deleted = parents_equality.merge(current_blame, on=comp_cols, how='left', indicator=True)
@@ -561,7 +638,7 @@ def extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, b
         added_lines = {x.post_line_number: x.post_line_content for _, x in added.iterrows()}
         deleted_lines = {x.pre_line_number: x.pre_line_content for _, x in deleted_p.iterrows()}
 
-        _, edits = identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
+        _, edits = _identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
 
         for _, edit in tqdm(edits.iterrows(), leave=False, desc='edits ' + commit.hash[0:7] + ' ' +
             str(modification_info['filename']), total=len(edits)):
@@ -570,7 +647,7 @@ def extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, b
             e['commit_hash'] = commit.hash
             e['edit_type'] = edit.type
             e.update(modification_info)
-            e.update(get_edit_details(edit, commit, deleted_lines, added_lines, parent_blames[idx],
+            e.update(_get_edit_details(edit, commit, deleted_lines, added_lines, parent_blames[idx],
                                     current_blame, use_blocks=use_blocks))
 
             edits_info = edits_info.append(e, ignore_index=True, sort=False)
@@ -578,21 +655,58 @@ def extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, b
     return edits_info
 
 
-def get_edited_file_paths_since_split(git_repo, commit):
+def _get_edited_file_paths_since_split(git_repo, commit):
+    """ For a merge commit returns list of all files edited since the last creation of a new branch
+        relevant for the merge.
+
+    Args:
+        git_repo: pydriller GitRepository object
+        commit: pydriller Commit object
+
+    Returns:
+        edited_file_paths: list of paths to the edited files
+    """
     def expand_dag(dag, leafs):
+        """ Expands a dag by adding the parents of a given set of nodes to the dag.
+
+        Args:
+            dag: pathpy DAG object
+            leafs: set of nodes that are expanded
+
+        Returns:
+            dag: the expanded pathpy DAG object
+        """
         for node in leafs:
             parents = git_repo.get_commit(node).parents
             for parent in parents:
                 dag.add_edge(node, parent)
         return dag
     def common_node_on_paths(paths):
+        """ Computes the overlap between given sets of nodes. Returns the nodes present in all sets.
+
+        Args:
+            paths: list of node sequences
+
+        Returns:
+            common_nodes: set of nodes that are present on all paths
+        """
         # Drop first and last element of the path.
         common_nodes = set(paths[0][1:-1])
         for path in paths[1:]:
             common_nodes.intersection_update(path[1:-1])
-        return list(common_nodes)
+        common_nodes = list(common_nodes)
+        return common_nodes
 
     def remove_successors(dag, node):
+        """ Removes all successors of a node from a given dag.
+
+        Args:
+            dag: pathpy DAG object
+            node: node for which successors shall be removed
+
+        Returns:
+            dag: reduced pathpy DAG object
+        """
         rm = [n for nl in [x[1:] for x in dag.routes_from_node(node)] for n in nl]
         for node in rm:
             dag.remove_node(node)
@@ -614,8 +728,8 @@ def get_edited_file_paths_since_split(git_repo, commit):
         if (len(leafs) == 1) or (len(common_nodes) > 0):
             cont = False
 
-    if len(common_nodes) > 0:
-        dag = remove_successors(dag, common_nodes[0])
+    for node in common_nodes:
+        dag = remove_successors(dag, node)
 
     edited_file_paths = []
     for node in dag.nodes:
@@ -631,7 +745,21 @@ def get_edited_file_paths_since_split(git_repo, commit):
     return edited_file_paths
 
 
-def process_commit(args):
+def _process_commit(args):
+    """ Extracts information on commit and all edits made with the commit.
+
+    Args:
+        args: dictionary with arguments. For multiprocessing, function can only take single input.
+              Dictionary must contain:
+                  repo_string: path to the git repository that is mined
+                  commit_hash: hash of the commit that is processed
+                  use_blocks: bool, determins if analysis is performed on block or line basis
+                  exclude_paths: file paths that are excluded from the analysis
+                  blame_C: string for the blame C option
+
+    Returns:
+        extracted_result: dict containing two dataframes with information of commit and edits
+    """
     git_repo = pydriller.GitRepository(args['repo_string'])
     commit = git_repo.get_commit(args['commit_hash'])
 
@@ -658,7 +786,7 @@ def process_commit(args):
     if commit.merge:
         # Git does not create a modification if own changes are accpeted during a merge. Therefore,
         # the edited files are extracted manually.
-        edited_file_paths = get_edited_file_paths_since_split(git_repo, commit)
+        edited_file_paths = _get_edited_file_paths_since_split(git_repo, commit)
         for edited_file_path in edited_file_paths:
             exclude_file = False
             for x in args['exclude_paths']:
@@ -677,7 +805,7 @@ def process_commit(args):
                     modification_info['lines_of_code_in_file'] = l.nloc
                     modification_info['modification_type'] = 'merge_self_accept'
 
-                    df_edits = df_edits.append(extract_edits_merge(git_repo, commit,
+                    df_edits = df_edits.append(_extract_edits_merge(git_repo, commit,
                                                                    modification_info,
                                                                    use_blocks=args['use_blocks'],
                                                                    blame_C=args['blame_C']),
@@ -699,7 +827,7 @@ def process_commit(args):
                         modification_info['lines_of_code_in_file'] = 0
                         modification_info['modification_type'] = 'merge_self_accept'
 
-                        df_edits = df_edits.append(extract_edits_merge(git_repo, commit,
+                        df_edits = df_edits.append(_extract_edits_merge(git_repo, commit,
                                                                     modification_info,
                                                                     use_blocks=args['use_blocks'],
                                                                     blame_C=args['blame_C']),
@@ -717,7 +845,7 @@ def process_commit(args):
                     if modification.old_path.startswith(x + os.sep):
                         exclude_file = True
             if not exclude_file:
-                df_edits = df_edits.append(extract_edits(git_repo, commit, modification,
+                df_edits = df_edits.append(_extract_edits(git_repo, commit, modification,
                                                          use_blocks=args['use_blocks'],
                                                          blame_C=args['blame_C']),
                                            ignore_index=True, sort=True)
@@ -725,11 +853,27 @@ def process_commit(args):
 
     df_commit = pd.DataFrame(c, index=[0])
 
-    return {'commit': df_commit, 'edits': df_edits}
+    extracted_result = {'commit': df_commit, 'edits': df_edits}
+
+    return extracted_result
 
 
-def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=None, blame_C='-C',
+def _process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=None, blame_C='-C',
                         _p_commits=[]):
+    """ Processes all commits in a given git repository in a serial manner.
+
+    Args:
+        repo_string: path to the git repository that is mined
+        sqlite_db_file: path (including database name) where the sqlite database will be created
+        use_blocks: bool, determins if analysis is performed on block or line basis
+        exclude: file paths that are excluded from the analysis
+        blame_C: string for the blame C option
+        _p_commits: list of commits that are already in the database
+
+    Returns:
+        sqlite database will be written at specified location
+    """
+
     git_repo = pydriller.GitRepository(repo_string)
     exclude_paths = []
     if exclude:
@@ -746,7 +890,7 @@ def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=N
     for commit in tqdm(commits, desc='Serial'):
         args = {'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
                 'exclude_paths': exclude_paths, 'blame_C': blame_C}
-        result = process_commit(args)
+        result = _process_commit(args)
 
         if not result['commit'].empty:
             result['commit'].to_sql('commits', con, if_exists='append')
@@ -754,9 +898,24 @@ def process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=N
             result['edits'].to_sql('edits', con, if_exists='append')
 
 
-def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
+def _process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
                           no_of_processes=os.cpu_count(), chunksize=1, exclude=None, blame_C='-C',
                           _p_commits=[]):
+    """ Processes all commits in a given git repository in a parallel manner.
+
+    Args:
+        repo_string: path to the git repository that is mined
+        sqlite_db_file: path (including database name) where the sqlite database will be created
+        use_blocks: bool, determins if analysis is performed on block or line basis
+        no_of_processes: number of parallel processes that are spawned
+        chunksize: number of tasks that are assigned to a process at a time
+        exclude: file paths that are excluded from the analysis
+        blame_C: string for the blame C option
+        _p_commits: list of commits that are already in the database
+
+    Returns:
+        sqlite database will be written at specified location
+    """
     git_repo = pydriller.GitRepository(repo_string)
     exclude_paths = []
     if exclude:
@@ -771,7 +930,7 @@ def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
     p = Pool(no_of_processes)
 
     with tqdm(total=len(args), desc='Parallel ({0} processes)'.format(no_of_processes)) as pbar:
-        for result in p.imap_unordered(process_commit, args, chunksize=chunksize):
+        for result in p.imap_unordered(_process_commit, args, chunksize=chunksize):
             if not result['commit'].empty:
                 result['commit'].to_sql('commits', con, if_exists='append')
             if not result['edits'].empty:
@@ -779,207 +938,18 @@ def process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
             pbar.update(1)
 
 
-def extract_editing_paths(sqlite_db_file, commit_hashes=False, file_paths=False, with_start=False,
-                          merge_renaming=True):
-    """ Returns line editing DAG as well as line editing paths.
+def identify_file_renaming(repo_string):
+    """ Identifies all names and locations different files in a repository have had.
 
     Args:
-        sqlite_db_file: path to sqlite database mined with git2net line method
-        commit_hashes: list of commits to consider, by default all commits are considered
-        file_paths: list of files to consider, by defailt all files are considered
-        with_start: bool, determines if node for filename is included as start for all editing pahts
-        merge_renaming: bool, determines if file renaming is considered
+        repo_string: path to the git repository that is mined
 
     Returns:
-        dag: line editing directed acyclic graph, pathpy DAG object
-        paths: line editing pahts, pathpy Path object
+        dag: pathpy DAG object depicting the renaming process
+        aliases: dictionary containing all aliases for all files
     """
 
-    # Connect to provided database.
-    con = sqlite3.connect(sqlite_db_file)
-
-    # Check if database is valid.
-    try:
-        path = con.execute("SELECT repository FROM _metadata").fetchall()[0][0]
-        method = con.execute("SELECT method FROM _metadata").fetchall()[0][0]
-        if method == 'blocks':
-            raise Exception("Invalid database. A database mined with 'use_blocks=False' is " +
-                            "required.")
-    except sqlite3.OperationalError:
-        raise Exception("You either provided no database or a database not created with git2net. " +
-                        "Please provide a valid datatabase mined with 'use_blocks=False'.")
-
-    # Extract required data from the provided database.
-    commits = pd.read_sql("""SELECT hash, author_name, author_date FROM commits""", con)
-    edits = pd.read_sql("""SELECT levenshtein_dist,
-                                  old_path,
-                                  new_path,
-                                  commit_hash,
-                                  original_commit_deletion,
-                                  original_commit_addition,
-                                  original_line_no_deletion,
-                                  original_line_no_addition,
-                                  original_file_path_deletion,
-                                  original_file_path_addition,
-                                  post_starting_line_no,
-                                  edit_type
-                           FROM edits""", con)
-
-    # commits.loc[:, 'hash'] = commits.hash.apply(lambda x: x[0:7] if x is not None else x)
-
-    # edits.loc[:, 'pre_commit'] = edits.pre_commit.apply(lambda x: x[0:7] if x is not None else x)
-    # edits.loc[:, 'post_commit'] = edits.post_commit.apply(
-    #                                 lambda x: x[0:7] if x is not None else x)
-    # edits.loc[:, 'original_line_no'] = edits.original_line_no.apply(
-    #                                             lambda x: float(x) if x is not None else x)
-
-    # Filter edits table if only edits from specific commits are considered.
-    if not commit_hashes == False:
-        edits = edits.loc[[x in commit_hashes for x in edits.commit_hash], :]
-
-    # Rename file paths to latest name if option is selected.
-    if merge_renaming:
-        # Identify files that have been renamed.
-        _, aliases = identify_file_renaming(path)
-        # Update their name in the edits table.
-        for key, value in aliases.items():
-            edits.replace(key, value[0], inplace=True)
-
-    # Filter edits table if specific files are considered. Has to be done after renaming.
-    if not file_paths == False:
-        edits = edits.loc[[x in file_paths for x in edits.new_path], :]
-
-    dag = pp.DAG()
-    node_info = {}
-    node_info['colors'] = {}
-    # node_info['authors'] = {}
-    # node_info['file_paths'] = {}
-    # node_info['edit_distance'] = {}
-    edge_info = {}
-    edge_info['colors'] = {}
-    # edge_info['weights'] = {}
-
-    # Get author and date of deletions.
-    edits = pd.merge(edits, commits, how='left', left_on='original_commit_deletion',
-                            right_on='hash').drop(['hash'], axis=1)
-
-    edits.rename(columns = {'author_name':'author_name_deletion',
-                            'author_date': 'author_date_deletion'}, inplace = True)
-
-    # Get author and date of additions.
-    edits = pd.merge(edits, commits, how='left', left_on='original_commit_addition',
-                            right_on='hash').drop(['hash'], axis=1)
-    edits.rename(columns = {'author_name':'author_name_addition',
-                            'author_date': 'author_date_addition'}, inplace = True)
-
-     # Get current author and date
-    edits = pd.merge(edits, commits, how='left', left_on='commit_hash',
-                            right_on='hash').drop(['hash'], axis=1)
-
-    # Sort edits by author date.
-    edits.sort_values('author_date', ascending=True, inplace=True)
-
-    file_paths = set()
-
-    for _, edit in edits.iterrows():
-        if edit.edit_type == 'replacement':
-            # Generate name of target node.
-            target = 'L' + str(int(edit.post_starting_line_no)) + ' ' + \
-                     edit.new_path + ' ' + \
-                     edit.commit_hash[0:7]
-
-            # Source of deletion must exist.
-            source_deletion = 'L' + str(int(edit.original_line_no_deletion)) + ' ' + \
-                              edit.original_file_path_deletion + ' ' + \
-                              edit.original_commit_deletion[0:7]
-            dag.add_edge(source_deletion, target)
-            edge_info['colors'][(source_deletion, target)] = 'white'
-            # Check id source of addition exists.
-            if edit.original_commit_addition is not None:
-                source_addition = 'L' + str(int(edit.original_line_no_addition)) + ' ' + \
-                                  edit.original_file_path_addition + ' ' + \
-                                  edit.original_commit_addition[0:7]
-                dag.add_edge(source_addition, target)
-                edge_info['colors'][(source_addition, target)] = '#FBB13C' # yellow
-        elif edit.edit_type == 'deletion':
-            # An edit in a file can only change lines in that file, not in the file the line was
-            # copied from.
-            if edit.original_file_path_deletion == edit.old_path:
-                # Generate name of target node.
-                target = 'deleted L' + str(int(edit.original_line_no_deletion)) + ' ' + \
-                        edit.original_file_path_deletion + ' ' + \
-                        edit.original_commit_deletion[0:7]
-
-                # Source of deletion must exist.
-                source_deletion = 'L' + str(int(edit.original_line_no_deletion)) + ' ' + \
-                                edit.original_file_path_deletion + ' ' + \
-                                edit.original_commit_deletion[0:7]
-                dag.add_edge(source_deletion, target)
-                edge_info['colors'][(source_deletion, target)] = 'white'
-            else:
-                copied_from = 'L' + str(int(edit.original_line_no_deletion)) + ' ' + \
-                                edit.original_file_path_deletion + ' ' + \
-                                edit.original_commit_deletion[0:7]
-                found_copied_to = False
-                for copied_to in dag.successors[copied_from]:
-                    if copied_to.split(' ')[1] == edit.old_path:
-                        found_copied_to = True
-                        break
-                assert found_copied_to
-                dag.add_edge(copied_to, 'deleted ' + copied_to)
-                edge_info['colors'][(copied_to, 'deleted ' + copied_to)] = 'white'
-        elif edit.edit_type == 'addition':
-            # Generate name of target node.
-            target = 'L' + str(int(edit.post_starting_line_no)) + ' ' + \
-                     edit.new_path + ' ' + \
-                     edit.commit_hash[0:7]
-
-            # Add file path as source and add file path to file_paths list.
-            source = edit.new_path
-            file_paths.add(edit.new_path)
-            dag.add_edge(source, target)
-            edge_info['colors'][(source, target)] = 'gray'
-
-            # Check id source of addition exists.
-            if edit.original_commit_addition is not None:
-                source_addition = 'L' + str(int(edit.original_line_no_addition)) + ' ' + \
-                                  edit.original_file_path_addition + ' ' + \
-                                  edit.original_commit_addition[0:7]
-                dag.add_edge(source_addition, target)
-                edge_info['colors'][(source_addition, target)] = '#FBB13C'
-        elif edit.edit_type == 'file_renaming':
-            pass
-        else:
-            raise Exception("Unexpected error in 'extract_editing_paths'.")
-
-
-
-    for node in dag.nodes:
-        if node in file_paths:
-            node_info['colors'][node] = 'gray'
-        elif '#FBB13C' in [edge_info['colors'][n] for n in [(x, node) for x in dag.predecessors[node]]]:
-            node_info['colors'][node] = '#FBB13C' # yellow
-        elif node.startswith('deleted'):
-            node_info['colors'][node] = '#A8322D' # red
-        elif 'white' not in [edge_info['colors'][n] for n in [(node, x) for x in dag.successors[node]]]:
-            node_info['colors'][node] = '#2E5EAA' # blue
-        elif not dag.predecessors[node].isdisjoint(file_paths):
-            node_info['colors'][node] = '#218380' # green
-        else:
-            node_info['colors'][node] = '#73D2DE' # light blue
-
-    if not with_start:
-        for file_path in file_paths:
-            dag.remove_node(file_path)
-
-    assert dag.is_acyclic is True
-
-    paths = pp.path_extraction.paths_from_dag(dag)
-
-    return dag, paths, node_info, edge_info
-
-
-def identify_file_renaming(repo_string):
+    # TODO: Consider corner case where file is renamed and new file with old name is created.
     git_repo = pydriller.GitRepository(repo_string)
 
     dag = pp.DAG()
@@ -997,19 +967,28 @@ def identify_file_renaming(repo_string):
                 else:
                     dag.add_edge(modification.old_path, modification.new_path)
 
-    def get_path_to_leaf_node(dag, node, _path=[]):
-        """
-        returns path to leaf node with leaf node at position '0' in list
+    def _get_path_to_leaf_node(dag, node, _path=[]):
+        """ For a given node and dag returns path to leaf node with leaf.
+
+        Args:
+            dag: pathpy DAG object
+            node: node for which path is computed
+            _path=[]: subpath used for recursion
+
+        Returns:
+            path: path from the current node to a leaf node in the dag
+
         """
         if len(dag.successors[node]) > 0:
-            return get_path_to_leaf_node(dag, list(dag.successors[node])[0], _path=[node] + _path)
+            return _get_path_to_leaf_node(dag, list(dag.successors[node])[0], _path=[node] + _path)
         else:
-            return [node] + _path
+            path = [node] + _path
+            return path
 
     renamings = []
     for node in dag.nodes:
         if 'added file' in dag.predecessors[node]:
-            renamings.append(get_path_to_leaf_node(dag, node))
+            renamings.append(_get_path_to_leaf_node(dag, node))
 
     aliases = {}
     for renaming in renamings:
@@ -1022,197 +1001,89 @@ def identify_file_renaming(repo_string):
 
 
 def get_unified_changes(repo_string, commit_hash, file_path):
-    """
-    Returns dataframe with github-like unified diff representation of the content of a file before
-    and after a commit for a given git repository, commit hash and file path.
+    """ Returns dataframe with github-like unified diff representation of the content of a file
+        before and after a commit for a given git repository, commit hash and file path.
+
+    Args:
+        repo_string: path to the git repository that is mined
+        commit_hash: commit hash for which the changes are computed
+        file_path: path to file (within the repository) for which the changes are computed
+
+    Returns:
+        df: pandas dataframe listing changes made to file in commit
     """
     git_repo = pydriller.GitRepository(repo_string)
     commit = git_repo.get_commit(commit_hash)
+
+    # Select the correct modifictaion.
     for modification in commit.modifications:
-        if modification.file_path == file_path:
-            parsed_lines = git_repo.parse_diff(modification.diff)
+        if modification.new_path == file_path:
+            break
 
-            deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
-            added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
+    # Parse the diff extracting the lines added and deleted with the given commit.
+    parsed_lines = git_repo.parse_diff(modification.diff)
 
-            pre_to_post, edits = identify_edits(deleted_lines, added_lines)
+    deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
+    added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
-            post_source_code = modification.source_code.split('\n')
+    # Indetify the edits made with the changes.
+    pre_to_post, edits = _identify_edits(deleted_lines, added_lines)
 
-            max_line_no = max(max(deleted_lines.keys()),
-                              max(added_lines.keys()),
-                              len(post_source_code))
+    # Extract the source code after the commit.
+    post_source_code = modification.source_code.split('\n')
 
-            pre_line_no = []
-            post_line_no = []
-            action = []
-            code = []
+    # Initialise lists for output.
+    pre_line_no = []
+    post_line_no = []
+    action = []
+    code = []
 
-            pre_counter = 1
-            post_counter = 1
-            while max(pre_counter, post_counter) < max_line_no:
-                if pre_counter in edits.keys():
-                    cur = pre_counter
-                    for i in range(edits[cur][0]):
-                        pre_line_no.append(pre_counter)
-                        post_line_no.append(None)
-                        action.append('-')
-                        code.append(deleted_lines[pre_counter])
-                        pre_counter += 1
-                    for i in range(edits[cur][2]):
-                        pre_line_no.append(None)
-                        post_line_no.append(post_counter)
-                        action.append('+')
-                        code.append(added_lines[post_counter])
-                        post_counter += 1
-                else:
-                    if pre_counter in pre_to_post.keys():
-                        # if pre is not in the dictionary nothing has changed
-                        if post_counter < pre_to_post[pre_counter]:
-                            # edit has been added
-                            for i in range(pre_to_post[pre_counter] - post_counter):
-                                pre_line_no.append(None)
-                                post_line_no.append(post_counter)
-                                action.append('+')
-                                code.append(added_lines[post_counter])
-                                post_counter += 1
+    # Go through all lines and report on the changes.
+    pre_counter = 1
+    post_counter = 1
+    while post_counter < len(post_source_code) or \
+          pre_counter < max(deleted_lines.keys()) or \
+          post_counter < max(added_lines.keys()):
+        if pre_counter in list(edits.pre_start):
+            pre_line_no.append(pre_counter)
+            post_line_no.append(None)
+            action.append('-')
+            code.append(deleted_lines[pre_counter])
+            pre_counter += 1
+        elif post_counter in list(edits.post_start):
+            pre_line_no.append(None)
+            post_line_no.append(post_counter)
+            action.append('+')
+            code.append(added_lines[post_counter])
+            post_counter += 1
+        else:
+            pre_line_no.append(pre_counter)
+            post_line_no.append(post_counter)
+            action.append(None)
+            code.append(post_source_code[post_counter - 1])
+            pre_counter += 1
+            post_counter += 1
 
-                    pre_line_no.append(pre_counter)
-                    post_line_no.append(post_counter)
-                    action.append(None)
-                    code.append(post_source_code[post_counter - 1]) # -1 as list starts from 0
-                    pre_counter += 1
-                    post_counter += 1
+    df = pd.DataFrame({'pre': pre_line_no, 'post': post_line_no, 'action': action, 'code': code})
 
-    return pd.DataFrame({'pre': pre_line_no, 'post': post_line_no, 'action': action, 'code': code})
-
-
-# THIS FUNCTIONS NEEDS TO BE REWRITTEN BASED ON THE NEW RESULTS
-
-# def _get_tedges(db_location):
-#     con = sqlite3.connect(db_location)
-
-#     tedges = pd.read_sql("""SELECT x.author_pre as source,
-#                                    substr(x.pre_commit, 1, 8) as pre_commit,
-#                                    c_post.author_email AS target,
-#                                    substr(x.post_commit, 1, 8) AS post_commit,
-#                                    c_post.committer_date as time,
-#                                    x.levenshtein_dist as levenshtein_dist
-#                             FROM (
-#                                    SELECT c_pre.author_email AS author_pre,
-#                                           edits.pre_commit,
-#                                           edits.post_commit,
-#                                           edits.levenshtein_dist
-#                                    FROM edits
-#                                    JOIN commits AS c_pre
-#                                    ON substr(c_pre.hash, 1, 8) == edits.pre_commit) AS x
-#                                    JOIN commits AS c_post
-#                                    ON substr(c_post.hash, 1, 8) == substr(x.post_commit, 1, 8
-#                                  )
-#                             WHERE source != target""", con)
-
-#     tedges.loc[:,'time'] = pd.to_datetime(tedges.time)
-
-#     return tedges
-
-
-# def get_coediting_network(db_location, time_from=None, time_to=None):
-#     tedges = _get_tedges(db_location)
-
-#     if time_from == None:
-#         time_from = min(tedges.time)
-#     if time_to == None:
-#         time_to = max(tedges.time)
-
-#     t = pp.TemporalNetwork()
-#     for _, edge in tedges.iterrows():
-#         if (edge.time >= time_from) and (edge.time <= time_to):
-#             t.add_edge(edge.source,
-#                        edge.target,
-#                        edge.time.strftime('%Y-%m-%d %H:%M:%S'),
-#                        directed=True,
-#                        timestamp_format='%Y-%m-%d %H:%M:%S')
-#     return t
-
-
-# def _get_bipartite_edges(db_location):
-#     con = sqlite3.connect(db_location)
-
-#     bipartite_edges = pd.read_sql("""SELECT DISTINCT mod_filename AS target,
-#                                             commits.author_name AS source,
-#                                             commits.committer_date AS time
-#                                      FROM edits
-#                                      JOIN commits ON edits.post_commit == commits.hash""", con)
-
-#     bipartite_edges.loc[:,'time'] = pd.to_datetime(bipartite_edges.time)
-
-#     return bipartite_edges
-
-
-# def get_bipartite_network(db_location, time_from=None, time_to=None):
-#     bipartite_edges = _get_bipartite_edges(db_location)
-
-#     if time_from == None:
-#         time_from = min(bipartite_edges.time)
-#     if time_to == None:
-#         time_to = max(bipartite_edges.time)
-
-#     dag = pp.Network()
-#     for idx, edge in bipartite_edges.iterrows():
-#         if (edge.time >= time_from) and (edge.time <= time_to):
-#             dag.add_edge(edge.source, edge.target)
-#     return dag
-
-
-# def _get_dag_edges(db_location):
-#     con = sqlite3.connect(db_location)
-
-#     dag_edges = pd.read_sql("""SELECT DISTINCT x.author_pre||","||substr(x.pre_commit, 1, 8)
-#                                         AS source,
-#                                       c_post.author_email||","|| substr(x.post_commit, 1, 8)
-#                                         AS target,
-#                                       c_post.committer_date AS time
-#                                FROM (
-#                                       SELECT c_pre.author_email AS author_pre,
-#                                              edits.pre_commit,
-#                                              edits.post_commit,
-#                                              edits.levenshtein_dist
-#                                       FROM edits
-#                                       JOIN commits AS c_pre
-#                                       ON substr(c_pre.hash, 1, 8) == edits.pre_commit
-#                                     ) AS x
-#                                 JOIN (
-#                                        SELECT *
-#                                        FROM commits
-#                                      ) AS c_post
-#                                 ON substr(c_post.hash, 1, 8) == substr(x.post_commit, 1, 8)
-#                                 WHERE x.author_pre != c_post.author_email""", con)
-
-#     dag_edges.loc[:,'time'] = pd.to_datetime(dag_edges.time)
-
-#     return dag_edges
-
-
-# def get_dag(db_location, time_from=None, time_to=None):
-#     dag_edges = _get_dag_edges(db_location)
-
-#     if time_from == None:
-#         time_from = min(dag_edges.time)
-#     if time_to == None:
-#         time_to = max(dag_edges.time)
-
-#     dag = pp.DAG()
-#     for _, edge in dag_edges.iterrows():
-#         if (edge.time >= time_from) and (edge.time <= time_to):
-#             dag.add_edge(edge.source, edge.target)
-
-#     dag.topsort()
-
-#     return dag
-
+    return df
 
 def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
                   no_of_processes=os.cpu_count(), chunksize=1, exclude=[], blame_C='-C'):
+    """ Creates sqlite database with details on commits and edits for a given git repository.
+
+    Args:
+        repo_string: path to the git repository that is mined
+        sqlite_db_file: path (including database name) where the sqlite database will be created
+        use_blocks: bool, determins if analysis is performed on block or line basis
+        no_of_processes: number of parallel processes that are spawned
+        chunksize: number of tasks that are assigned to a process at a time
+        exclude: file paths that are excluded from the analysis
+        blame_C: string for the blame C option
+
+    Returns:
+        sqlite database will be written at specified location
+    """
 
     if os.path.exists(sqlite_db_file):
         try:
@@ -1275,17 +1146,18 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
             p_commits = []
 
     if no_of_processes > 1:
-        process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
+        _process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
                               use_blocks=use_blocks, no_of_processes=no_of_processes,
                               chunksize=chunksize, exclude=exclude, blame_C=blame_C,
                               _p_commits=p_commits)
     else:
-        process_repo_serial(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
+        _process_repo_serial(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
                             use_blocks=use_blocks, exclude=exclude, blame_C=blame_C,
                             _p_commits=p_commits)
 
+####################################################################################################
 
-
+### Allows to use git2net from the command line
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description='Extracts commit and co-editing data from git repositories.')

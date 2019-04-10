@@ -5,14 +5,15 @@ and time-stamped co-editing networks from git repositories.
 
 __author__ = "Christoph Gote"
 __email__ = "cgote@ethz.ch"
-__version__ = "1.0.0"
+__version__ = "0.9.0"
 
-from .git2net import get_commit_dag
-from .git2net import identify_file_renaming
-from .git2net import mine_git_repo
-from .git2net import extract_editing_paths
-from .git2net import extract_edits
-from .git2net import process_commit
-from .git2net import identify_edits
-from .git2net import extract_edits_merge
-from .git2net import get_edited_file_paths_since_split
+from .extraction import mine_git_repo
+from .extraction import get_unified_changes
+from .extraction import get_commit_dag
+from .extraction import identify_file_renaming
+from .extraction import text_entropy
+from .visualisation import get_line_editing_paths
+from .visualisation import get_commit_editing_paths
+from .visualisation import get_coediting_network
+from .visualisation import get_coauthorship_network
+from .visualisation import get_bipartite_network

@@ -1,0 +1,8 @@
+pandas
+tqdm
+numpy
+scipy
+python-levenshtein
+pathpy2
+lizard
+pydriller

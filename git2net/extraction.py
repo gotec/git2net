@@ -11,7 +11,7 @@ import argparse
 from multiprocessing import Pool
 
 import pandas as pd
-from tqdm.auto import tqdm
+from tqdm import tqdm
 import numpy as np
 from scipy.stats import entropy
 
@@ -197,7 +197,10 @@ def text_entropy(text):
         text_entropy: text entropy of the given string
     """
 
-    text_entropy = entropy([text.count(chr(i)) for i in range(256)], base=2)
+    if len(text) == 0:
+        text_entropy = None
+    else:
+        text_entropy = entropy([text.count(chr(i)) for i in range(256)], base=2)
 
     return text_entropy
 
@@ -541,8 +544,7 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
 
     # Next, metadata on all identified edits is extracted and added to a pandas DataFrame.
     edits_info = pd.DataFrame()
-    for _, edit in tqdm(edits.iterrows(), leave=False, desc='edits ' + commit.hash[0:7] + ' ' +
-        str(modification.filename), total=len(edits)):
+    for _, edit in edits.iterrows(): #tqdm(edits.iterrows(), leave=False, desc='edits ' + commit.hash[0:7] + ' ' + str(modification.filename), total=len(edits)):
         e = {}
         # Extract general information.
         e['filename'] = modification.filename
@@ -640,8 +642,7 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
 
         _, edits = _identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
 
-        for _, edit in tqdm(edits.iterrows(), leave=False, desc='edits ' + commit.hash[0:7] + ' ' +
-            str(modification_info['filename']), total=len(edits)):
+        for _, edit in edits.iterrows(): #tqdm(edits.iterrows(), leave=False, desc='edits ' + commit.hash[0:7] + ' ' + str(modification_info['filename']), total=len(edits)):
             e = {}
             # Extract general information.
             e['commit_hash'] = commit.hash
@@ -834,8 +835,7 @@ def _process_commit(args):
                                                    ignore_index=True, sort=True)
 
     else:
-        for modification in tqdm(commit.modifications, leave=False, desc='modifications ' +
-        commit.hash[0:7]):
+        for modification in commit.modifications:#tqdm(commit.modifications, leave=False, desc='modifications ' + commit.hash[0:7]):
             exclude_file = False
             for x in args['exclude_paths']:
                 if modification.new_path:

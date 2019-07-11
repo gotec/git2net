@@ -5,7 +5,7 @@ and time-stamped co-editing networks from git repositories.
 
 __author__ = "Christoph Gote"
 __email__ = "cgote@ethz.ch"
-__version__ = "0.9.0"
+__version__ = "0.9.1"
 
 from .extraction import mine_git_repo
 from .extraction import get_unified_changes

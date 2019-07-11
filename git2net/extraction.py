@@ -11,7 +11,7 @@ import argparse
 from multiprocessing import Pool
 
 import pandas as pd
-from tqdm.auto import tqdm
+from tqdm import tqdm
 import numpy as np
 from scipy.stats import entropy
 
@@ -197,7 +197,10 @@ def text_entropy(text):
         text_entropy: text entropy of the given string
     """
 
-    text_entropy = entropy([text.count(chr(i)) for i in range(256)], base=2)
+    if len(text) == 0:
+        text_entropy = None
+    else:
+        text_entropy = entropy([text.count(chr(i)) for i in range(256)], base=2)
 
     return text_entropy
 
@@ -391,7 +394,7 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
         # Levenshtein edit distance is set to 'None'. Theoretically 1 keystroke required.
         e['levenshtein_dist'] = None
 
-        # Data on origin of deleted line. Every deleted line must have an origin
+        # Data on origin of deleted line. Every deleted line must have an origin.
         if use_blocks:
             e['original_commit_deletion'] = 'not available with use_blocks'
             e['original_line_no_deletion'] = 'not available with use_blocks'
@@ -541,8 +544,8 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
 
     # Next, metadata on all identified edits is extracted and added to a pandas DataFrame.
     edits_info = pd.DataFrame()
-    for _, edit in tqdm(edits.iterrows(), leave=False, desc='edits ' + commit.hash[0:7] + ' ' +
-        str(modification.filename), total=len(edits)):
+    for _, edit in edits.iterrows(): #tqdm(edits.iterrows(), leave=False, desc='edits ' + commit.hash[0:7] + ' ' +
+        #str(modification.filename), total=len(edits)):
         e = {}
         # Extract general information.
         e['filename'] = modification.filename
@@ -569,7 +572,7 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
     Args:
         git_repo: pydriller GitRepository object
         commit: pydriller Commit object
-        modification: pydriller Modification object
+        modification_info: information on the modification as stored in a pydriller Modification.
         use_blocks: bool, determins if analysis is performed on block or line basis
         blame_C: git blame '-C' option. By default, '-C' is used.
 
@@ -577,82 +580,284 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
         edits_info: pandas DataFrame object containing metadata on all edits in given modification
     """
     assert commit.merge
+    assert len(commit.parents) == 2
     # With merges, the following cases can occur:
     #   1. Changes of one or more parents are accepted.
     #   2. Changes made prior to the merge are replaced with new edits.
     # To obtain the state of the file before merging, get blame is executed on all parent commits.
-    parent_blames = []
-    for parent in commit.parents:
-        blame = git_repo.git.blame(parent,
-                                   _parse_blame_C(blame_C) +
-                                   ['-w', '--show-number', '--porcelain'],
-                                   modification_info['old_path'])
-        parent_blame = _parse_porcelain_blame(blame).rename(
-                    columns={'line_content': 'pre_line_content', 'line_number': 'pre_line_number'})
-        parent_blame.loc[:, 'pre_commit'] = parent
-        parent_blames.append(parent_blame)
-
+    try:
+        parent_blame1 = git_repo.git.blame(commit.parents[0],
+                                           _parse_blame_C(blame_C) + ['-w', '--show-number', '--porcelain'],
+                                           modification_info['old_path'])
+        parent_blame1 = _parse_porcelain_blame(parent_blame1).rename(
+                        columns={'line_content': 'pre_line_content', 'line_number': 'pre_line_number'})
+        parent_blame1.loc[:, 'pre_commit'] = commit.parents[0]
+    except GitCommandError:
+        parent_blame1 = pd.DataFrame({'original_commit_hash': [],
+                                      'original_line_no': [],
+                                      'original_file_path': [],
+                                      'pre_line_content': [],
+                                      'pre_line_number': [],
+                                      'pre_commit': []})
+    
+    try:
+        parent_blame2 = git_repo.git.blame(commit.parents[1],
+                                       _parse_blame_C(blame_C) + ['-w', '--show-number', '--porcelain'],
+                                       modification_info['old_path'])
+        parent_blame2 = _parse_porcelain_blame(parent_blame2).rename(
+                        columns={'line_content': 'pre_line_content', 'line_number': 'pre_line_number'})
+        parent_blame2.loc[:, 'pre_commit'] = commit.parents[1]
+    except GitCommandError:
+        parent_blame2 = pd.DataFrame({'original_commit_hash': [],
+                                      'original_line_no': [],
+                                      'original_file_path': [],
+                                      'pre_line_content': [],
+                                      'pre_line_number': [],
+                                      'pre_commit': []})
+    
+    # Then, the current state of the file is obtained by executing git blame on the current commit.
+    try:
+        current_blame = git_repo.git.blame(commit.hash,
+                                           _parse_blame_C(blame_C) + ['-w', '--show-number', '--porcelain'],
+                                           modification_info['new_path'])
+        current_blame = _parse_porcelain_blame(current_blame).rename(
+                        columns={'line_content': 'post_line_content', 'line_number': 'post_line_number'})
+    except GitCommandError:
+        current_blame = pd.DataFrame({'original_commit_hash': [],
+                                      'original_line_no': [],
+                                      'original_file_path': [],
+                                      'post_line_content': [],
+                                      'post_line_number': []})
+    
     # Define columns that are considered when identifying duplicates.
     comp_cols = ['original_commit_hash', 'original_line_no', 'original_file_path']
+    
+    parent_blame1['_count'] = parent_blame1.groupby(comp_cols).cumcount()
+    parent_blame2['_count'] = parent_blame2.groupby(comp_cols).cumcount()
+    current_blame['_count'] = current_blame.groupby(comp_cols).cumcount()
+    
+    comp = parent_blame1.merge(parent_blame2, on=comp_cols+['_count'], how='outer', indicator=True) \
+           .rename(columns={'_merge': '_parent_merge'})
+
+    #comp.to_csv('comp.csv', sep='\t')
+    
+    #print(comp['pre_line_content_x'] == comp['pre_line_content_y'])
+    #print(comp['pre_line_number_x'] == comp['pre_line_number_y'])
+    #print(comp['pre_commit_x'] == comp['pre_commit_y'])
+    
+    #print('xxxxxxxxxxxxxxxxxxxxxxx')
+    #print(comp.columns)
+    #print('comp:')
+    #for idx, row in comp.iterrows():
+    #    print(idx, row)
+    #print('xxxxxxxxxxxxxxxxxxxxxxx')
+    
+    comp = comp.merge(current_blame, on=comp_cols+['_count'], how='outer', indicator=True)
+    comp['_action'] = np.nan
+    
+    comp.loc[(comp['_parent_merge']=='both') & (comp['_merge']=='both'), '_action'] = 'accepted'
+    comp.loc[(comp['_parent_merge'].isnull()) & (comp['_merge']=='right_only'), '_action'] = 'added'
+    comp.loc[(comp['_parent_merge']=='both') & (comp['_merge']=='left_only'), '_action'] = 'deleted'
+    comp.loc[(comp['_parent_merge']=='left_only') & (comp['_merge']=='left_only'), '_action'] = 'deleted1'
+    comp.loc[(comp['_parent_merge']=='right_only') & (comp['_merge']=='left_only'), '_action'] = 'deleted2'
+    comp.loc[(comp['_parent_merge']=='left_only') & (comp['_merge']=='both'), '_action'] = 'accepted1'
+    comp.loc[(comp['_parent_merge']=='right_only') & (comp['_merge']=='both'), '_action'] = 'accepted2'
+    
+    assert comp['_action'].isnull().any() == False
+    
+    #comp.to_csv('comp.csv', sep='\t')
+    
+    drop_cols = ['_count', '_parent_merge', '_merge', '_action']
+    
+    added = comp.loc[comp['_action']=='added'].drop(drop_cols, axis=1)
+    deleted1 = comp.loc[(comp['_action']=='deleted') | (comp['_action']=='deleted1')].drop(drop_cols, axis=1)
+    deleted2 = comp.loc[(comp['_action']=='deleted') | (comp['_action']=='deleted2')].drop(drop_cols, axis=1)
+    
+    #print('xxxxxxxxxxxxxxxxxxxxxxx')
+    #print(deleted1.columns)
+    #print('deleted1:')
+    #for idx, row in deleted1.iterrows():
+    #    print(idx, row)
+    #print('xxxxxxxxxxxxxxxxxxxxxxx')
+    
+    added_lines = {x.post_line_number: x.post_line_content for _, x in added.iterrows()}
+    deleted_lines1 = {x.pre_line_number_x: x.pre_line_content_x for _, x in deleted1.iterrows()}
+    deleted_lines2 = {x.pre_line_number_y: x.pre_line_content_y for _, x in deleted2.iterrows()}
+    
+    matches = []
+    for k, v in added_lines.items():
+        if k in deleted_lines1 and v == deleted_lines1[k]:
+            del deleted_lines1[k]
+            matches.append(k)
+        if k in deleted_lines2 and v == deleted_lines2[k]:
+            del deleted_lines2[k]
+            matches.append(k)
+    for k in set(matches):
+        del added_lines[k]
+    
+    edits = pd.DataFrame()
+    edits_info = pd.DataFrame()
+    
+
+    _, edits1 = _identify_edits(deleted_lines1, added_lines, use_blocks=use_blocks)
+    _, edits2 = _identify_edits(deleted_lines2, added_lines, use_blocks=use_blocks)
+
+    for _, edit in edits1.iterrows():
+        e = {}
+        # Extract general information.
+        e['commit_hash'] = commit.hash
+        e['edit_type'] = edit.type
+        e.update(modification_info)
+        e.update(_get_edit_details(edit, commit, deleted_lines1, added_lines, parent_blame1,
+                                current_blame, use_blocks=use_blocks))
+
+        edits_info = edits_info.append(e, ignore_index=True, sort=False)
+
+    for _, edit in edits2.iterrows():
+        e = {}
+        # Extract general information.
+        e['commit_hash'] = commit.hash
+        e['edit_type'] = edit.type
+        e.update(modification_info)
+        e.update(_get_edit_details(edit, commit, deleted_lines2, added_lines, parent_blame2,
+                                current_blame, use_blocks=use_blocks))
+
+        edits_info = edits_info.append(e, ignore_index=True, sort=False)
+    
+    return edits_info
+    
+    #print(commit.hash)
+    #print(modification_info['filename'])
+    #print(added_lines)
+    #print(deleted_lines1)
+    #print(deleted_lines2)
+    
+    #assert False
+    
+    #for parent in commit.parents:
+    #    blame = git_repo.git.blame(parent,
+    #                               _parse_blame_C(blame_C) +
+    #                               ['-w', '--show-number', '--porcelain'],
+    #                               modification_info['old_path'])
+    #    parent_blame = _parse_porcelain_blame(blame).rename(
+    #                columns={'line_content': 'pre_line_content', 'line_number': 'pre_line_number'})
+    #    parent_blame.loc[:, 'pre_commit'] = parent
+    #    parent_blames.append(parent_blame)
+
+    #print('xxxxxxxxxxxxxxxxxxxxxxx')
+    #print('parent_blames:')
+    #for blame in parent_blames:
+    #    print('-----------------------------------------')
+    #    for idx, row in blame.iterrows():
+    #        print(idx, row['original_commit_hash'], row['original_line_no'], row['original_file_path'], row['pre_line_content'])
+    #print('xxxxxxxxxxxxxxxxxxxxxxx')
+        
+    
 
     # Differences between parents are obtained by concatenating and fully dropping all duplicates.
-    parent_differences = pd.concat(parent_blames).drop_duplicates(subset=comp_cols, keep=False)
-    parents_equality = pd.concat(parent_blames).loc[pd.concat(parent_blames).duplicated(
-                                                                            subset=comp_cols), :]
-    parents_equality.drop(['pre_commit'], axis=1, inplace=True)
+    #parent_differences = pd.concat(parent_blames)
+    #print('xxxxxxxxxxxxxxxxxxxxxxx')
+    #print('parent_differences:')
+    #for idx, row in parent_differences.iterrows():
+    #    print(idx, row['original_commit_hash'], row['original_line_no'], row['original_file_path'], row['pre_line_content'])
+    #print('xxxxxxxxxxxxxxxxxxxxxxx')
+    #parent_differences = parent_differences.drop_duplicates(subset=comp_cols, keep=False)
+    #parents_equality = pd.concat(parent_blames).loc[pd.concat(parent_blames).duplicated(
+    #                                                                        subset=comp_cols), :]
+    #parents_equality.drop(['pre_commit'], axis=1, inplace=True)
 
-    # Then, the current state of the file is obtained by executing git blame on the current commit.
-    blame = git_repo.git.blame(commit.hash,
-                               _parse_blame_C(blame_C) +
-                               ['-w', '--show-number', '--porcelain'],
-                               modification_info['new_path'])
-    current_blame = _parse_porcelain_blame(blame).rename(
-            columns={'line_content': 'post_line_content', 'line_number': 'post_line_number'})
+ 
+    
+    #print('xxxxxxxxxxxxxxxxxxxxxxx')
+    #print('parent_differences:')
+    #for idx, row in parent_differences.iterrows():
+    #    print(idx, row['original_commit_hash'], row['original_line_no'], row['original_file_path'], row['pre_line_content'])
+    #print('xxxxxxxxxxxxxxxxxxxxxxx')
+    #print('parents_equality:')
+    #for idx, row in parents_equality.iterrows():
+    #    print(idx, row['original_commit_hash'], row['original_line_no'], row['original_file_path'], row['pre_line_content'])
+    #print('xxxxxxxxxxxxxxxxxxxxxxx')
+    
+    
     # Lines that are in both parents but not in current state were actively deleted in the merge.
-    deleted = parents_equality.merge(current_blame, on=comp_cols, how='left', indicator=True)
-    deleted = deleted.loc[deleted._merge != 'both', :].drop(['_merge'], axis=1)
-    deleted.drop(['post_line_content', 'post_line_number'], axis=1, inplace=True)
-
+    #deleted = parents_equality.merge(current_blame, on=comp_cols, how='left', indicator=True)
+    #print('deleted: ', len(deleted))
+    #deleted = deleted.loc[deleted._merge != 'both', :].drop(['_merge'], axis=1)
+    #print('deleted: ', deleted.tail(50))
+    #deleted.drop(['post_line_content', 'post_line_number'], axis=1, inplace=True)
+    #print('deleted: ', deleted.tail(50))
+    
+    
+    #print('xxxxxxxxxxxxxxxxxxxxxxx')
+    #print('deleted:')
+    #for idx, row in deleted.iterrows():
+    #    print(idx, row['original_commit_hash'], row['original_line_no'], row['original_file_path'], row['pre_line_content'])
+    #print('xxxxxxxxxxxxxxxxxxxxxxx')
+    
+    
+    #print('parents_equality: ', parents_equality.tail(50))
+    #print('current_blame: ', current_blame.tail(50))
+    
+    
     # All lines for which git blame shows they originate in the current commit were actively added.
-    added = current_blame.loc[current_blame.original_commit_hash == commit.hash, :]
-
+    #added = current_blame.loc[current_blame.original_commit_hash == commit.hash, :]
+    
+    #print('xxxxxxxxxxxxxxxxxxxxxxx')
+    #print('current_blame:')
+    #print('commit.hash: ', commit.hash)
+    #for idx, row in current_blame.iterrows():
+    #    print(idx, row['original_commit_hash'], row['original_line_no'], row['original_file_path'], row['pre_line_content'])
+    #print('xxxxxxxxxxxxxxxxxxxxxxx')
+    
+    #print('xxxxxxxxxxxxxxxxxxxxxxx')
+    #print('added:')
+    #for idx, row in added.iterrows():
+    #    print(idx, row['original_commit_hash'], row['original_line_no'], row['original_file_path'], row['pre_line_content'])
+    #print('xxxxxxxxxxxxxxxxxxxxxxx')
+    
     # Now, only the lines that in the current commit that were not added or in both parents remain.
-    remaining = pd.concat([current_blame, parents_equality, added], sort=False).drop_duplicates(
-                                                                    subset=comp_cols, keep=False)
-    remaining.drop(['pre_line_content', 'pre_line_number'], axis=1, inplace=True)
+    #remaining = pd.concat([current_blame, parents_equality, added], sort=False).drop_duplicates(
+    #                                                                subset=comp_cols, keep=False)
+    #remaining.drop(['pre_line_content', 'pre_line_number'], axis=1, inplace=True)
 
     # These lines have to come from the difference between the parents. All lines that are not in
     # this difference were removed by not accepting changes in the merge.
-    deleted_merge = parent_differences.merge(remaining, on=comp_cols, how='left', indicator=True)
-    deleted_merge = deleted_merge.loc[deleted_merge._merge != 'both', :].drop(['_merge'], axis=1)
-    deleted_merge.drop(['post_line_content', 'post_line_number'], axis=1, inplace=True)
+    #deleted_merge = parent_differences.merge(remaining, on=comp_cols, how='left', indicator=True)
+    #deleted_merge = deleted_merge.loc[deleted_merge._merge != 'both', :].drop(['_merge'], axis=1)
+    #deleted_merge.drop(['post_line_content', 'post_line_number'], axis=1, inplace=True)
 
     # When lines are added, they can replace lines that were deleted with the same merge. These are
     # identified next.
-    edits = pd.DataFrame()
-    edits_info = pd.DataFrame()
-    for idx, parent in enumerate(commit.parents):
-        deleted_p = pd.concat([deleted, deleted_merge.loc[deleted_merge.pre_commit == parent,:]
-                               .drop(['pre_commit'], axis=1)], sort=False)
-
-        added_lines = {x.post_line_number: x.post_line_content for _, x in added.iterrows()}
-        deleted_lines = {x.pre_line_number: x.pre_line_content for _, x in deleted_p.iterrows()}
-
-        _, edits = _identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
-
-        for _, edit in tqdm(edits.iterrows(), leave=False, desc='edits ' + commit.hash[0:7] + ' ' +
-            str(modification_info['filename']), total=len(edits)):
-            e = {}
-            # Extract general information.
-            e['commit_hash'] = commit.hash
-            e['edit_type'] = edit.type
-            e.update(modification_info)
-            e.update(_get_edit_details(edit, commit, deleted_lines, added_lines, parent_blames[idx],
-                                    current_blame, use_blocks=use_blocks))
-
-            edits_info = edits_info.append(e, ignore_index=True, sort=False)
-
-    return edits_info
+    #edits = pd.DataFrame()
+    #edits_info = pd.DataFrame()
+    #for idx, parent in enumerate(commit.parents):
+    #    print('==========================')
+    #    print('hash: ', commit.hash)
+    #    print('parent: ', parent)
+    #    
+    #    deleted_p = pd.concat([deleted, deleted_merge.loc[deleted_merge.pre_commit == parent,:]
+    #                           .drop(['pre_commit'], axis=1)], sort=False)
+    #
+    #    print('deleted_p: ', deleted_p)
+    #    
+    #    added_lines = {x.post_line_number: x.post_line_content for _, x in added.iterrows()}
+    #    deleted_lines = {x.pre_line_number: x.pre_line_content for _, x in deleted_p.iterrows()}
+    #
+    #    _, edits = _identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
+    #
+    #    for _, edit in edits.iterrows(): #tqdm(edits.iterrows(), leave=False, desc='edits ' + commit.hash[0:7] + ' ' +
+    #        #str(modification_info['filename']), total=len(edits)):
+    #        e = {}
+    #        # Extract general information.
+    #        e['commit_hash'] = commit.hash
+    #        e['edit_type'] = edit.type
+    #        e.update(modification_info)
+    #        e.update(_get_edit_details(edit, commit, deleted_lines, added_lines, parent_blames[idx],
+    #                                current_blame, use_blocks=use_blocks))
+    #
+    #        edits_info = edits_info.append(e, ignore_index=True, sort=False)
+    #
+    #return edits_info
 
 
 def _get_edited_file_paths_since_split(git_repo, commit):
@@ -815,17 +1020,34 @@ def _process_commit(args):
                     # has no content.
 
                     # Get filenames from all modifications in merge commit.
-                    paths = [m.old_path for m in commit.modifications]
+                    paths = {m.old_path: m for m in commit.modifications}
 
                     # Analyse changes if modification was recorded. Else, the deletions were made
                     # before the merge.
-                    if edited_file_path in paths:
+                    if edited_file_path in paths.keys():
+                        #df_edits = df_edits.append(_extract_edits(git_repo, commit, paths[edited_file_path],
+                        #                                 use_blocks=args['use_blocks'],
+                        #                                 blame_C=args['blame_C']),
+                        #                           ignore_index=True, sort=True)
                         modification_info['filename'] = edited_file_path.split(os.sep)[-1]
-                        modification_info['new_path'] = None # File was deleted.
+                        modification_info['new_path'] = paths[edited_file_path] # File was deleted.
                         modification_info['old_path'] = edited_file_path
-                        modification_info['cyclomatic_complexity_of_file'] = 0
-                        modification_info['lines_of_code_in_file'] = 0
-                        modification_info['modification_type'] = 'merge_self_accept'
+                        
+                        if modification_info['new_path']:
+                            file_contents = git_repo.git.show('{}:{}'.format(commit.hash, modification_info['new_path']))
+                            #print('modification_info[new_path]: ', modification_info['new_path'])
+                            #print('file_contents: ', file_contents)
+                            if file_contents:
+                                l = lizard.analyze_file.analyze_source_code(modification_info['new_path'], file_contents)
+                                modification_info['cyclomatic_complexity_of_file'] = l.CCN
+                                modification_info['lines_of_code_in_file'] = l.nloc
+                            else:
+                                modification_info['cyclomatic_complexity_of_file'] = 0
+                                modification_info['lines_of_code_in_file'] = 0
+                        else:
+                            modification_info['cyclomatic_complexity_of_file'] = 0
+                            modification_info['lines_of_code_in_file'] = 0
+                        modification_info['modification_type'] = 'merge_delete_or_rename'
 
                         df_edits = df_edits.append(_extract_edits_merge(git_repo, commit,
                                                                     modification_info,
@@ -834,8 +1056,8 @@ def _process_commit(args):
                                                    ignore_index=True, sort=True)
 
     else:
-        for modification in tqdm(commit.modifications, leave=False, desc='modifications ' +
-        commit.hash[0:7]):
+        for modification in commit.modifications:#tqdm(commit.modifications, leave=False, desc='modifications ' +
+        #commit.hash[0:7]):
             exclude_file = False
             for x in args['exclude_paths']:
                 if modification.new_path:
@@ -895,6 +1117,7 @@ def _process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=
         if not result['commit'].empty:
             result['commit'].to_sql('commits', con, if_exists='append')
         if not result['edits'].empty:
+            #print('result[edits]: ', result['edits'])
             result['edits'].to_sql('edits', con, if_exists='append')
 
 

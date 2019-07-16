@@ -992,116 +992,119 @@ def _process_commit(args):
     """
     git_repo = pydriller.GitRepository(args['repo_string'])
     commit = git_repo.get_commit(args['commit_hash'])
+    try:
+        # parse commit
+        c = {}
+        c['hash'] = commit.hash
+        c['author_email'] = commit.author.email
+        c['author_name'] = commit.author.name
+        c['committer_email'] = commit.committer.email
+        c['committer_name'] = commit.committer.name
+        c['author_date'] = commit.author_date.strftime('%Y-%m-%d %H:%M:%S')
+        c['committer_date'] = commit.committer_date.strftime('%Y-%m-%d %H:%M:%S')
+        c['committer_timezone'] = commit.committer_timezone
+        c['no_of_modifications'] = len(commit.modifications)
+        c['msg_len'] = len(commit.msg)
+        c['project_name'] = commit.project_name
+        c['parents'] = ','.join(commit.parents)
+        c['merge'] = commit.merge
+        c['in_main_branch'] = commit.in_main_branch
+        c['branches'] = ','.join(commit.branches)
 
-    # parse commit
-    c = {}
-    c['hash'] = commit.hash
-    c['author_email'] = commit.author.email
-    c['author_name'] = commit.author.name
-    c['committer_email'] = commit.committer.email
-    c['committer_name'] = commit.committer.name
-    c['author_date'] = commit.author_date.strftime('%Y-%m-%d %H:%M:%S')
-    c['committer_date'] = commit.committer_date.strftime('%Y-%m-%d %H:%M:%S')
-    c['committer_timezone'] = commit.committer_timezone
-    c['no_of_modifications'] = len(commit.modifications)
-    c['msg_len'] = len(commit.msg)
-    c['project_name'] = commit.project_name
-    c['parents'] = ','.join(commit.parents)
-    c['merge'] = commit.merge
-    c['in_main_branch'] = commit.in_main_branch
-    c['branches'] = ','.join(commit.branches)
+        # parse modification
+        df_edits = pd.DataFrame()
+        if commit.merge:
+            # Git does not create a modification if own changes are accpeted during a merge. Therefore,
+            # the edited files are extracted manually.
+            edited_file_paths = [f for p in commit.parents for f in git_repo.git.diff(commit.hash, p, '--name-only').split('\n')]
+            # edited_file_paths = _get_edited_file_paths_since_split(git_repo, commit)
+            for edited_file_path in edited_file_paths:
+                exclude_file = False
+                for x in args['exclude_paths']:
+                    if edited_file_path.startswith(x + os.sep) or (edited_file_path == x):
+                        exclude_file = True
+                if not exclude_file:
+                    modification_info = {}
+                    try:
+                        file_contents = git_repo.git.show('{}:{}'.format(commit.hash, edited_file_path))
+                        l = lizard.analyze_file.analyze_source_code(edited_file_path, file_contents)
 
-    # parse modification
-    df_edits = pd.DataFrame()
-    if commit.merge:
-        # Git does not create a modification if own changes are accpeted during a merge. Therefore,
-        # the edited files are extracted manually.
-        edited_file_paths = [f for p in commit.parents for f in git_repo.git.diff(commit.hash, p, '--name-only').split('\n')]
-        # edited_file_paths = _get_edited_file_paths_since_split(git_repo, commit)
-        for edited_file_path in edited_file_paths:
-            exclude_file = False
-            for x in args['exclude_paths']:
-                if edited_file_path.startswith(x + os.sep) or (edited_file_path == x):
-                    exclude_file = True
-            if not exclude_file:
-                modification_info = {}
-                try:
-                    file_contents = git_repo.git.show('{}:{}'.format(commit.hash, edited_file_path))
-                    l = lizard.analyze_file.analyze_source_code(edited_file_path, file_contents)
-
-                    modification_info['filename'] = edited_file_path.split(os.sep)[-1]
-                    modification_info['new_path'] = edited_file_path
-                    modification_info['old_path'] = edited_file_path
-                    modification_info['cyclomatic_complexity_of_file'] = l.CCN
-                    modification_info['lines_of_code_in_file'] = l.nloc
-                    modification_info['modification_type'] = 'merge_self_accept'
-
-                    df_edits = df_edits.append(_extract_edits_merge(git_repo, commit,
-                                                                   modification_info,
-                                                                   use_blocks=args['use_blocks'],
-                                                                   blame_C=args['blame_C']),
-                                               ignore_index=True, sort=True)
-                except GitCommandError:
-                    # A GitCommandError occurs if the file was deleted. In this case it currently
-                    # has no content.
-
-                    # Get filenames from all modifications in merge commit.
-                    paths = {m.old_path: m for m in commit.modifications}
-
-                    # Analyse changes if modification was recorded. Else, the deletions were made
-                    # before the merge.
-                    if edited_file_path in paths.keys():
-                        #df_edits = df_edits.append(_extract_edits(git_repo, commit, paths[edited_file_path],
-                        #                                 use_blocks=args['use_blocks'],
-                        #                                 blame_C=args['blame_C']),
-                        #                           ignore_index=True, sort=True)
                         modification_info['filename'] = edited_file_path.split(os.sep)[-1]
-                        modification_info['new_path'] = paths[edited_file_path] # File was deleted.
+                        modification_info['new_path'] = edited_file_path
                         modification_info['old_path'] = edited_file_path
-                        
-                        if modification_info['new_path']:
-                            file_contents = git_repo.git.show('{}:{}'.format(commit.hash, modification_info['new_path']))
-                            #print('modification_info[new_path]: ', modification_info['new_path'])
-                            #print('file_contents: ', file_contents)
-                            if file_contents:
-                                l = lizard.analyze_file.analyze_source_code(modification_info['new_path'], file_contents)
-                                modification_info['cyclomatic_complexity_of_file'] = l.CCN
-                                modification_info['lines_of_code_in_file'] = l.nloc
+                        modification_info['cyclomatic_complexity_of_file'] = l.CCN
+                        modification_info['lines_of_code_in_file'] = l.nloc
+                        modification_info['modification_type'] = 'merge_self_accept'
+
+                        df_edits = df_edits.append(_extract_edits_merge(git_repo, commit,
+                                                                       modification_info,
+                                                                       use_blocks=args['use_blocks'],
+                                                                       blame_C=args['blame_C']),
+                                                   ignore_index=True, sort=True)
+                    except GitCommandError:
+                        # A GitCommandError occurs if the file was deleted. In this case it currently
+                        # has no content.
+
+                        # Get filenames from all modifications in merge commit.
+                        paths = {m.old_path: m for m in commit.modifications}
+
+                        # Analyse changes if modification was recorded. Else, the deletions were made
+                        # before the merge.
+                        if edited_file_path in paths.keys():
+                            #df_edits = df_edits.append(_extract_edits(git_repo, commit, paths[edited_file_path],
+                            #                                 use_blocks=args['use_blocks'],
+                            #                                 blame_C=args['blame_C']),
+                            #                           ignore_index=True, sort=True)
+                            modification_info['filename'] = edited_file_path.split(os.sep)[-1]
+                            modification_info['new_path'] = paths[edited_file_path] # File was deleted.
+                            modification_info['old_path'] = edited_file_path
+
+                            if modification_info['new_path']:
+                                file_contents = git_repo.git.show('{}:{}'.format(commit.hash, modification_info['new_path']))
+                                #print('modification_info[new_path]: ', modification_info['new_path'])
+                                #print('file_contents: ', file_contents)
+                                if file_contents:
+                                    l = lizard.analyze_file.analyze_source_code(modification_info['new_path'], file_contents)
+                                    modification_info['cyclomatic_complexity_of_file'] = l.CCN
+                                    modification_info['lines_of_code_in_file'] = l.nloc
+                                else:
+                                    modification_info['cyclomatic_complexity_of_file'] = 0
+                                    modification_info['lines_of_code_in_file'] = 0
                             else:
                                 modification_info['cyclomatic_complexity_of_file'] = 0
                                 modification_info['lines_of_code_in_file'] = 0
-                        else:
-                            modification_info['cyclomatic_complexity_of_file'] = 0
-                            modification_info['lines_of_code_in_file'] = 0
-                        modification_info['modification_type'] = 'merge_delete_or_rename'
+                            modification_info['modification_type'] = 'merge_delete_or_rename'
 
-                        df_edits = df_edits.append(_extract_edits_merge(git_repo, commit,
-                                                                    modification_info,
-                                                                    use_blocks=args['use_blocks'],
-                                                                    blame_C=args['blame_C']),
-                                                   ignore_index=True, sort=True)
+                            df_edits = df_edits.append(_extract_edits_merge(git_repo, commit,
+                                                                        modification_info,
+                                                                        use_blocks=args['use_blocks'],
+                                                                        blame_C=args['blame_C']),
+                                                       ignore_index=True, sort=True)
 
-    else:
-        for modification in commit.modifications:
-            exclude_file = False
-            for x in args['exclude_paths']:
-                if modification.new_path:
-                    if modification.new_path.startswith(x + os.sep) or (modification.new_path == x):
-                        exclude_file = True
-                if not exclude_file and modification.old_path:
-                    if modification.old_path.startswith(x + os.sep):
-                        exclude_file = True
-            if not exclude_file:
-                df_edits = df_edits.append(_extract_edits(git_repo, commit, modification,
-                                                         use_blocks=args['use_blocks'],
-                                                         blame_C=args['blame_C']),
-                                           ignore_index=True, sort=True)
+        else:
+            for modification in commit.modifications:
+                exclude_file = False
+                for x in args['exclude_paths']:
+                    if modification.new_path:
+                        if modification.new_path.startswith(x + os.sep) or (modification.new_path == x):
+                            exclude_file = True
+                    if not exclude_file and modification.old_path:
+                        if modification.old_path.startswith(x + os.sep):
+                            exclude_file = True
+                if not exclude_file:
+                    df_edits = df_edits.append(_extract_edits(git_repo, commit, modification,
+                                                             use_blocks=args['use_blocks'],
+                                                             blame_C=args['blame_C']),
+                                               ignore_index=True, sort=True)
 
 
-    df_commit = pd.DataFrame(c, index=[0])
+        df_commit = pd.DataFrame(c, index=[0])
 
-    extracted_result = {'commit': df_commit, 'edits': df_edits}
-
+        extracted_result = {'commit': df_commit, 'edits': df_edits}
+    except:
+        print('Failed processing commit: ', commit.hash)
+        extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
+        
     return extracted_result
 
 

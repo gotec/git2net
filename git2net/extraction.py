@@ -1016,7 +1016,8 @@ def _process_commit(args):
     if commit.merge:
         # Git does not create a modification if own changes are accpeted during a merge. Therefore,
         # the edited files are extracted manually.
-        edited_file_paths = _get_edited_file_paths_since_split(git_repo, commit)
+        edited_file_paths = [f for p in commit.parents for f in git_repo.git.diff(commit.hash, p, '--name-only').split('\n')]
+        # edited_file_paths = _get_edited_file_paths_since_split(git_repo, commit)
         for edited_file_path in edited_file_paths:
             exclude_file = False
             for x in args['exclude_paths']:
@@ -1081,7 +1082,7 @@ def _process_commit(args):
                                                    ignore_index=True, sort=True)
 
     else:
-        for modification in commit.modifications:#tqdm(commit.modifications, leave=False, desc='modifications ' + commit.hash[0:7]):
+        for modification in commit.modifications:
             exclude_file = False
             for x in args['exclude_paths']:
                 if modification.new_path:
@@ -1330,9 +1331,7 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
 
     Returns:
         sqlite database will be written at specified location
-    """
-    print('Hello World!')
-    
+    """    
     if os.path.exists(sqlite_db_file):
         try:
             with sqlite3.connect(sqlite_db_file) as con:

@@ -271,6 +271,7 @@ def _parse_porcelain_blame(blame):
     start_of_line_info = True
     prefix = '\t'
     line_number = 1
+    filename = '' # Initialise filename variable.
     for idx, line in enumerate(blame.split('\n')):
         if line.startswith(prefix):
             l['original_file_path'].append(filename)
@@ -866,29 +867,29 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
     #        edits_info = edits_info.append(e, ignore_index=True, sort=False)
     #
     #return edits_info
-    edits = pd.DataFrame()
-    edits_info = pd.DataFrame()
-    for idx, parent in enumerate(commit.parents):
-        deleted_p = pd.concat([deleted, deleted_merge.loc[deleted_merge.pre_commit == parent,:]
-                               .drop(['pre_commit'], axis=1)], sort=False)
+    #edits = pd.DataFrame()
+    #edits_info = pd.DataFrame()
+    #for idx, parent in enumerate(commit.parents):
+    #    deleted_p = pd.concat([deleted, deleted_merge.loc[deleted_merge.pre_commit == parent,:]
+    #                           .drop(['pre_commit'], axis=1)], sort=False)
 
-        added_lines = {x.post_line_number: x.post_line_content for _, x in added.iterrows()}
-        deleted_lines = {x.pre_line_number: x.pre_line_content for _, x in deleted_p.iterrows()}
+    #     added_lines = {x.post_line_number: x.post_line_content for _, x in added.iterrows()}
+    #     deleted_lines = {x.pre_line_number: x.pre_line_content for _, x in deleted_p.iterrows()}
 
-        _, edits = _identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
+    #     _, edits = _identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
 
-        for _, edit in edits.iterrows():
-            e = {}
-            # Extract general information.
-            e['commit_hash'] = commit.hash
-            e['edit_type'] = edit.type
-            e.update(modification_info)
-            e.update(_get_edit_details(edit, commit, deleted_lines, added_lines, parent_blames[idx],
-                                    current_blame, use_blocks=use_blocks))
+    #     for _, edit in edits.iterrows():
+    #         e = {}
+    #         # Extract general information.
+    #         e['commit_hash'] = commit.hash
+    #         e['edit_type'] = edit.type
+    #         e.update(modification_info)
+    #         e.update(_get_edit_details(edit, commit, deleted_lines, added_lines, parent_blames[idx],
+    #                                 current_blame, use_blocks=use_blocks))
 
-            edits_info = edits_info.append(e, ignore_index=True, sort=False)
+    #         edits_info = edits_info.append(e, ignore_index=True, sort=False)
 
-    return edits_info
+    # return edits_info
 
 
 def _get_edited_file_paths_since_split(git_repo, commit):

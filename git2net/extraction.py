@@ -998,42 +998,6 @@ def _process_commit(args):
     """
     git_repo = pydriller.GitRepository(args['repo_string'])
     commit = git_repo.get_commit(args['commit_hash'])
-    try:
-        # parse commit
-        c = {}
-        c['hash'] = commit.hash
-        c['author_email'] = commit.author.email
-        c['author_name'] = commit.author.name
-        c['committer_email'] = commit.committer.email
-        c['committer_name'] = commit.committer.name
-        c['author_date'] = commit.author_date.strftime('%Y-%m-%d %H:%M:%S')
-        c['committer_date'] = commit.committer_date.strftime('%Y-%m-%d %H:%M:%S')
-        c['committer_timezone'] = commit.committer_timezone
-        c['no_of_modifications'] = len(commit.modifications)
-        c['msg_len'] = len(commit.msg)
-        c['project_name'] = commit.project_name
-        c['parents'] = ','.join(commit.parents)
-        c['merge'] = commit.merge
-        c['in_main_branch'] = commit.in_main_branch
-        c['branches'] = ','.join(commit.branches)
-
-        # parse modification
-        df_edits = pd.DataFrame()
-        if commit.merge:
-            # Git does not create a modification if own changes are accpeted during a merge. Therefore,
-            # the edited files are extracted manually.
-            edited_file_paths = [f for p in commit.parents for f in git_repo.git.diff(commit.hash, p, '--name-only').split('\n')]
-            # edited_file_paths = _get_edited_file_paths_since_split(git_repo, commit)
-            for edited_file_path in edited_file_paths:
-                exclude_file = False
-                for x in args['exclude_paths']:
-                    if edited_file_path.startswith(x + os.sep) or (edited_file_path == x):
-                        exclude_file = True
-                if not exclude_file:
-                    modification_info = {}
-                    try:
-                        file_contents = git_repo.git.show('{}:{}'.format(commit.hash, edited_file_path))
-                        l = lizard.analyze_file.analyze_source_code(edited_file_path, file_contents)
 
     signal.alarm(args['timeout'])
 
@@ -1140,11 +1104,6 @@ def _process_commit(args):
         extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
     else:
         signal.alarm(0)
-
-        extracted_result = {'commit': df_commit, 'edits': df_edits}
-    except:
-        print('Failed processing commit: ', commit.hash)
-        extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
 
     return extracted_result
 

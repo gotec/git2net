@@ -24,6 +24,13 @@ import pathpy as pp
 import re
 import lizard
 
+import signal
+class TimeoutException(Exception):   # Custom exception class
+  pass
+def TimeoutHandler(signum, frame):   # Custom signal handler
+  raise TimeoutException
+# Change the behavior of SIGALRM
+OriginalHandler = signal.signal(signal.SIGALRM,TimeoutHandler)
 
 def _get_block_length(lines, k):
     """ Calculates the length (in number of lines) of a edit of added/deleted lines starting in a
@@ -544,7 +551,7 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
 
     # Next, metadata on all identified edits is extracted and added to a pandas DataFrame.
     edits_info = pd.DataFrame()
-    for _, edit in edits.iterrows(): #tqdm(edits.iterrows(), leave=False, desc='edits ' + commit.hash[0:7] + ' ' + str(modification.filename), total=len(edits)):
+    for _, edit in edits.iterrows():
         e = {}
         # Extract general information.
         e['filename'] = modification.filename
@@ -642,7 +649,7 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
 
         _, edits = _identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
 
-        for _, edit in edits.iterrows(): #tqdm(edits.iterrows(), leave=False, desc='edits ' + commit.hash[0:7] + ' ' + str(modification_info['filename']), total=len(edits)):
+        for _, edit in edits.iterrows():
             e = {}
             # Extract general information.
             e['commit_hash'] = commit.hash
@@ -764,102 +771,118 @@ def _process_commit(args):
     git_repo = pydriller.GitRepository(args['repo_string'])
     commit = git_repo.get_commit(args['commit_hash'])
 
-    # parse commit
-    c = {}
-    c['hash'] = commit.hash
-    c['author_email'] = commit.author.email
-    c['author_name'] = commit.author.name
-    c['committer_email'] = commit.committer.email
-    c['committer_name'] = commit.committer.name
-    c['author_date'] = commit.author_date.strftime('%Y-%m-%d %H:%M:%S')
-    c['committer_date'] = commit.committer_date.strftime('%Y-%m-%d %H:%M:%S')
-    c['committer_timezone'] = commit.committer_timezone
-    c['no_of_modifications'] = len(commit.modifications)
-    c['msg_len'] = len(commit.msg)
-    c['project_name'] = commit.project_name
-    c['parents'] = ','.join(commit.parents)
-    c['merge'] = commit.merge
-    c['in_main_branch'] = commit.in_main_branch
-    c['branches'] = ','.join(commit.branches)
+    signal.alarm(args['timeout'])
 
-    # parse modification
-    df_edits = pd.DataFrame()
-    if commit.merge:
-        # Git does not create a modification if own changes are accpeted during a merge. Therefore,
-        # the edited files are extracted manually.
-        edited_file_paths = _get_edited_file_paths_since_split(git_repo, commit)
-        for edited_file_path in edited_file_paths:
-            exclude_file = False
-            for x in args['exclude_paths']:
-                if edited_file_path.startswith(x + os.sep) or (edited_file_path == x):
-                    exclude_file = True
-            if not exclude_file:
-                modification_info = {}
-                try:
-                    file_contents = git_repo.git.show('{}:{}'.format(commit.hash, edited_file_path))
-                    l = lizard.analyze_file.analyze_source_code(edited_file_path, file_contents)
+    try:
+        # parse commit
+        c = {}
+        c['hash'] = commit.hash
+        c['author_email'] = commit.author.email
+        c['author_name'] = commit.author.name
+        c['committer_email'] = commit.committer.email
+        c['committer_name'] = commit.committer.name
+        c['author_date'] = commit.author_date.strftime('%Y-%m-%d %H:%M:%S')
+        c['committer_date'] = commit.committer_date.strftime('%Y-%m-%d %H:%M:%S')
+        c['committer_timezone'] = commit.committer_timezone
+        c['no_of_modifications'] = len(commit.modifications)
+        c['msg_len'] = len(commit.msg)
+        c['project_name'] = commit.project_name
+        c['parents'] = ','.join(commit.parents)
+        c['merge'] = commit.merge
+        c['in_main_branch'] = commit.in_main_branch
+        c['branches'] = ','.join(commit.branches)
 
-                    modification_info['filename'] = edited_file_path.split(os.sep)[-1]
-                    modification_info['new_path'] = edited_file_path
-                    modification_info['old_path'] = edited_file_path
-                    modification_info['cyclomatic_complexity_of_file'] = l.CCN
-                    modification_info['lines_of_code_in_file'] = l.nloc
-                    modification_info['modification_type'] = 'merge_self_accept'
+        # parse modification
+        df_edits = pd.DataFrame()
+        if commit.merge:
+            # Git does not create a modification if own changes are accpeted during a merge.
+            # Therefore, the edited files are extracted manually.
+            edited_file_paths = _get_edited_file_paths_since_split(git_repo, commit)
+            for edited_file_path in tqdm(edited_file_paths, leave=False, desc=commit.hash[0:7],
+                                         disable=(args['no_of_processes']>1)):
+                exclude_file = False
+                for x in args['exclude_paths']:
+                    if edited_file_path.startswith(x + os.sep) or (edited_file_path == x):
+                        exclude_file = True
+                if not exclude_file:
+                    modification_info = {}
+                    try:
+                        file_contents = git_repo.git.show('{}:{}'.format(commit.hash,
+                                                                         edited_file_path))
+                        l = lizard.analyze_file.analyze_source_code(edited_file_path, file_contents)
 
-                    df_edits = df_edits.append(_extract_edits_merge(git_repo, commit,
-                                                                   modification_info,
-                                                                   use_blocks=args['use_blocks'],
-                                                                   blame_C=args['blame_C']),
-                                               ignore_index=True, sort=True)
-                except GitCommandError:
-                    # A GitCommandError occurs if the file was deleted. In this case it currently
-                    # has no content.
-
-                    # Get filenames from all modifications in merge commit.
-                    paths = [m.old_path for m in commit.modifications]
-
-                    # Analyse changes if modification was recorded. Else, the deletions were made
-                    # before the merge.
-                    if edited_file_path in paths:
                         modification_info['filename'] = edited_file_path.split(os.sep)[-1]
-                        modification_info['new_path'] = None # File was deleted.
+                        modification_info['new_path'] = edited_file_path
                         modification_info['old_path'] = edited_file_path
-                        modification_info['cyclomatic_complexity_of_file'] = 0
-                        modification_info['lines_of_code_in_file'] = 0
+                        modification_info['cyclomatic_complexity_of_file'] = l.CCN
+                        modification_info['lines_of_code_in_file'] = l.nloc
                         modification_info['modification_type'] = 'merge_self_accept'
 
                         df_edits = df_edits.append(_extract_edits_merge(git_repo, commit,
                                                                     modification_info,
                                                                     use_blocks=args['use_blocks'],
                                                                     blame_C=args['blame_C']),
-                                                   ignore_index=True, sort=True)
+                                                ignore_index=True, sort=True)
+                    except GitCommandError:
+                        # A GitCommandError occurs if the file was deleted. In this case it
+                        # currently has no content.
 
+                        # Get filenames from all modifications in merge commit.
+                        paths = [m.old_path for m in commit.modifications]
+
+                        # Analyse changes if modification was recorded. Else, the deletions were
+                        # made before the merge.
+                        if edited_file_path in paths:
+                            modification_info['filename'] = edited_file_path.split(os.sep)[-1]
+                            modification_info['new_path'] = None # File was deleted.
+                            modification_info['old_path'] = edited_file_path
+                            modification_info['cyclomatic_complexity_of_file'] = 0
+                            modification_info['lines_of_code_in_file'] = 0
+                            modification_info['modification_type'] = 'merge_self_accept'
+
+                            df_edits = df_edits.append(_extract_edits_merge(git_repo, commit,
+                                                                    modification_info,
+                                                                    use_blocks=args['use_blocks'],
+                                                                    blame_C=args['blame_C']),
+                                                    ignore_index=True, sort=True)
+
+        else:
+            for modification in tqdm(commit.modifications, leave=False, desc=commit.hash[0:7],
+                                     disable=(args['no_of_processes']>1)):
+                exclude_file = False
+                for x in args['exclude_paths']:
+                    if modification.new_path:
+                        if modification.new_path.startswith(x + os.sep) or \
+                           (modification.new_path == x):
+                            exclude_file = True
+                    if not exclude_file and modification.old_path:
+                        if modification.old_path.startswith(x + os.sep):
+                            exclude_file = True
+                if not exclude_file:
+                    df_edits = df_edits.append(_extract_edits(git_repo, commit, modification,
+                                                            use_blocks=args['use_blocks'],
+                                                            blame_C=args['blame_C']),
+                                            ignore_index=True, sort=True)
+
+
+        df_commit = pd.DataFrame(c, index=[0])
+
+        extracted_result = {'commit': df_commit, 'edits': df_edits}
+    except TimeoutException:
+        print('Timeout processing commit: ', commit.hash)
+        extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
+    except Exception:
+        print('Error processing commit: ', commit.hash)
+        extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
     else:
-        for modification in commit.modifications:#tqdm(commit.modifications, leave=False, desc='modifications ' + commit.hash[0:7]):
-            exclude_file = False
-            for x in args['exclude_paths']:
-                if modification.new_path:
-                    if modification.new_path.startswith(x + os.sep) or (modification.new_path == x):
-                        exclude_file = True
-                if not exclude_file and modification.old_path:
-                    if modification.old_path.startswith(x + os.sep):
-                        exclude_file = True
-            if not exclude_file:
-                df_edits = df_edits.append(_extract_edits(git_repo, commit, modification,
-                                                         use_blocks=args['use_blocks'],
-                                                         blame_C=args['blame_C']),
-                                           ignore_index=True, sort=True)
-
-
-    df_commit = pd.DataFrame(c, index=[0])
-
-    extracted_result = {'commit': df_commit, 'edits': df_edits}
+        signal.alarm(0)
 
     return extracted_result
 
 
-def _process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=None, blame_C='-C',
-                        _p_commits=[]):
+def _process_repo_serial(repo_string, sqlite_db_file, use_blocks=False,
+                         no_of_processes=os.cpu_count(), exclude=None, blame_C='-C', timeout=0,
+                         _p_commits=[]):
     """ Processes all commits in a given git repository in a serial manner.
 
     Args:
@@ -889,7 +912,8 @@ def _process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=
 
     for commit in tqdm(commits, desc='Serial'):
         args = {'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
-                'exclude_paths': exclude_paths, 'blame_C': blame_C}
+                'exclude_paths': exclude_paths, 'blame_C': blame_C,
+                'no_of_processes': no_of_processes, 'timeout': timeout}
         result = _process_commit(args)
 
         if not result['commit'].empty:
@@ -900,7 +924,7 @@ def _process_repo_serial(repo_string, sqlite_db_file, use_blocks=False, exclude=
 
 def _process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
                           no_of_processes=os.cpu_count(), chunksize=1, exclude=None, blame_C='-C',
-                          _p_commits=[]):
+                          timeout=0, _p_commits=[]):
     """ Processes all commits in a given git repository in a parallel manner.
 
     Args:
@@ -923,7 +947,8 @@ def _process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
             exclude_paths = [x.strip() for x in f.readlines()]
 
     args = [{'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
-             'exclude_paths': exclude_paths, 'blame_C': blame_C}
+             'exclude_paths': exclude_paths, 'blame_C': blame_C, 'no_of_processes': no_of_processes,
+             'timeout': timeout}
             for commit in git_repo.get_list_commits() if commit.hash not in _p_commits]
 
     con = sqlite3.connect(sqlite_db_file)
@@ -1069,7 +1094,8 @@ def get_unified_changes(repo_string, commit_hash, file_path):
     return df
 
 def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
-                  no_of_processes=os.cpu_count(), chunksize=1, exclude=[], blame_C='-C'):
+                  no_of_processes=os.cpu_count(), chunksize=1, exclude=[], blame_C='-C',
+                  timeout=60):
     """ Creates sqlite database with details on commits and edits for a given git repository.
 
     Args:
@@ -1149,11 +1175,11 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
         _process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
                               use_blocks=use_blocks, no_of_processes=no_of_processes,
                               chunksize=chunksize, exclude=exclude, blame_C=blame_C,
-                              _p_commits=p_commits)
+                              timeout=timeout, _p_commits=p_commits)
     else:
         _process_repo_serial(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
-                            use_blocks=use_blocks, exclude=exclude, blame_C=blame_C,
-                            _p_commits=p_commits)
+                            use_blocks=use_blocks, no_of_processes=no_of_processes, exclude=exclude,
+                            blame_C=blame_C, timeout=timeout, _p_commits=p_commits)
 
 ####################################################################################################
 
@@ -1175,9 +1201,11 @@ if __name__ == "__main__":
         default=None)
     parser.add_argument('--blame-C', help="Git blame -C option. To not use -C provide ''", type=str,
         dest='blame_C', default='-C')
+    parser.add_argument('--timeout', help='Stop processing commit after timeout. Use 0 to disable.',
+        default=0, type=int)
 
     args = parser.parse_args()
 
     mine_git_repo(args.repo, args.outfile, use_blocks=args.use_blocks,
                   no_of_processes=args.numprocesses, chunksize=args.chunksize, exclude=args.exclude,
-                  blame_C=args.blame_C)
+                  blame_C=args.blame_C, timeout=args.timeout)

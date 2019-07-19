@@ -24,6 +24,8 @@ import pathpy as pp
 import re
 import lizard
 
+from contextlib import closing
+
 def _get_block_length(lines, k):
     """ Calculates the length (in number of lines) of a edit of added/deleted lines starting in a
         given line k.
@@ -1180,15 +1182,14 @@ def _process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
             for commit in git_repo.get_list_commits() if commit.hash not in _p_commits]
 
     con = sqlite3.connect(sqlite_db_file)
-    p = Pool(no_of_processes)
-
-    with tqdm(total=len(args), desc='Parallel ({0} processes)'.format(no_of_processes)) as pbar:
-        for result in p.imap_unordered(_process_commit, args, chunksize=chunksize):
-            if not result['commit'].empty:
-                result['commit'].to_sql('commits', con, if_exists='append')
-            if not result['edits'].empty:
-                result['edits'].to_sql('edits', con, if_exists='append')
-            pbar.update(1)
+    with closing(Pool(no_of_processes)) as p:
+        with tqdm(total=len(args), desc='Parallel ({0} processes)'.format(no_of_processes)) as pbar:
+            for result in p.imap_unordered(_process_commit, args, chunksize=chunksize):
+                if not result['commit'].empty:
+                    result['commit'].to_sql('commits', con, if_exists='append')
+                if not result['edits'].empty:
+                    result['edits'].to_sql('edits', con, if_exists='append')
+                pbar.update(1)
 
 
 def identify_file_renaming(repo_string):

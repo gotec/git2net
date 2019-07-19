@@ -24,7 +24,15 @@ import pathpy as pp
 import re
 import lizard
 
-from contextlib import closing
+#from contextlib import closing
+
+import signal
+class TimeoutException(Exception):   # Custom exception class
+  pass
+def TimeoutHandler(signum, frame):   # Custom signal handler
+  raise TimeoutException
+# Change the behavior of SIGALRM
+OriginalHandler = signal.signal(signal.SIGALRM,TimeoutHandler)
 
 def _get_block_length(lines, k):
     """ Calculates the length (in number of lines) of a edit of added/deleted lines starting in a
@@ -994,6 +1002,8 @@ def _process_commit(args):
     git_repo = pydriller.GitRepository(args['repo_string'])
     commit = git_repo.get_commit(args['commit_hash'])
 
+    signal.alarm(args['timeout'])
+
     try:
         # parse commit
         c = {}
@@ -1104,16 +1114,21 @@ def _process_commit(args):
         df_commit = pd.DataFrame(c, index=[0])
 
         extracted_result = {'commit': df_commit, 'edits': df_edits}
+    except TimeoutException:
+        print('Timeout processing commit: ', commit.hash)
+        extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
     except Exception:
         print('Error processing commit: ', commit.hash)
         extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
+    else:
+        signal.alarm(0)
 
     return extracted_result
 
 
 def _process_repo_serial(repo_string, sqlite_db_file, use_blocks=False,
                          no_of_processes=os.cpu_count(), exclude=None, blame_C='-C',
-                         max_modifications=0, _p_commits=[]):
+                         max_modifications=0, timeout=0, _p_commits=[]):
     """ Processes all commits in a given git repository in a serial manner.
 
     Args:
@@ -1144,7 +1159,8 @@ def _process_repo_serial(repo_string, sqlite_db_file, use_blocks=False,
     for commit in tqdm(commits, desc='Serial'):
         args = {'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
                 'exclude_paths': exclude_paths, 'blame_C': blame_C,
-                'no_of_processes': no_of_processes, 'max_modifications': max_modifications}
+                'no_of_processes': no_of_processes, 'max_modifications': max_modifications,
+                'timeout': timeout}
         result = _process_commit(args)
 
         if not result['commit'].empty:
@@ -1156,7 +1172,7 @@ def _process_repo_serial(repo_string, sqlite_db_file, use_blocks=False,
 
 def _process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
                           no_of_processes=os.cpu_count(), chunksize=1, exclude=None, blame_C='-C',
-                          max_modifications=0, _p_commits=[]):
+                          max_modifications=0, timeout=0, _p_commits=[]):
     """ Processes all commits in a given git repository in a parallel manner.
 
     Args:
@@ -1180,18 +1196,18 @@ def _process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
 
     args = [{'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
              'exclude_paths': exclude_paths, 'blame_C': blame_C, 'no_of_processes': no_of_processes,
-             'max_modifications': max_modifications}
+             'max_modifications': max_modifications, 'timeout': timeout}
             for commit in git_repo.get_list_commits() if commit.hash not in _p_commits]
 
     con = sqlite3.connect(sqlite_db_file)
-    with closing(Pool(no_of_processes)) as p:
-        with tqdm(total=len(args), desc='Parallel ({0} processes)'.format(no_of_processes)) as pbar:
-            for result in p.imap_unordered(_process_commit, args, chunksize=chunksize):
-                if not result['commit'].empty:
-                    result['commit'].to_sql('commits', con, if_exists='append')
-                if not result['edits'].empty:
-                    result['edits'].to_sql('edits', con, if_exists='append')
-                pbar.update(1)
+    p = Pool(no_of_processes)
+    with tqdm(total=len(args), desc='Parallel ({0} processes)'.format(no_of_processes)) as pbar:
+        for result in p.imap_unordered(_process_commit, args, chunksize=chunksize):
+            if not result['commit'].empty:
+                result['commit'].to_sql('commits', con, if_exists='append')
+            if not result['edits'].empty:
+                result['edits'].to_sql('edits', con, if_exists='append')
+            pbar.update(1)
 
 
 def identify_file_renaming(repo_string):
@@ -1359,7 +1375,7 @@ def mining_state_summary(repo_string, sqlite_db_file):
 
 def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
                   no_of_processes=os.cpu_count(), chunksize=1, exclude=[], blame_C='-C',
-                  max_modifications=60):
+                  max_modifications=0, timeout=0):
     """ Creates sqlite database with details on commits and edits for a given git repository.
 
     Args:
@@ -1438,11 +1454,12 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
         _process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
                               use_blocks=use_blocks, no_of_processes=no_of_processes,
                               chunksize=chunksize, exclude=exclude, blame_C=blame_C,
-                              max_modifications=max_modifications, _p_commits=p_commits)
+                              max_modifications=max_modifications, timeout=timeout,
+                              _p_commits=p_commits)
     else:
         _process_repo_serial(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
                             use_blocks=use_blocks, no_of_processes=no_of_processes, exclude=exclude,
-                            blame_C=blame_C, max_modifications=max_modifications,
+                            blame_C=blame_C, max_modifications=max_modifications, timeout=timeout,
                             _p_commits=p_commits)
 
 ####################################################################################################
@@ -1467,9 +1484,12 @@ if __name__ == "__main__":
         dest='blame_C', default='-C')
     parser.add_argument('--max-modifications', help='Do not process commits with more than given ' +
         'number of modifications. Use 0 to disable.', dest='max_modifications', default=0, type=int)
+    parser.add_argument('--timeout', help='Stop processing commit after timeout. Use 0 to disable.',
+        default=0, type=int)
 
     args = parser.parse_args()
 
     mine_git_repo(args.repo, args.outfile, use_blocks=args.use_blocks,
                   no_of_processes=args.numprocesses, chunksize=args.chunksize, exclude=args.exclude,
-                  blame_C=args.blame_C, max_modifications=args.max_modifications)
+                  blame_C=args.blame_C, max_modifications=args.max_modifications,
+                  timeout=args.timeout)

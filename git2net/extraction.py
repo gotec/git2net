@@ -1018,7 +1018,9 @@ def _process_commit(args):
         if commit.merge:
             # Git does not create a modification if own changes are accpeted during a merge.
             # Therefore, the edited files are extracted manually.
-            edited_file_paths = _get_edited_file_paths_since_split(git_repo, commit)
+            edited_file_paths = [f for p in commit.parents for f in
+                                 git_repo.git.diff(commit.hash, p, '--name-only').split('\n')]
+            # edited_file_paths = _get_edited_file_paths_since_split(git_repo, commit)
 
             if (args['max_modifications'] > 0) and \
                (len(edited_file_paths) > args['max_modifications']):

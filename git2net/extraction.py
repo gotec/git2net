@@ -1028,8 +1028,8 @@ def _process_commit(args):
         if commit.merge:
             # Git does not create a modification if own changes are accpeted during a merge.
             # Therefore, the edited files are extracted manually.
-            edited_file_paths = [f for p in commit.parents for f in
-                                 git_repo.git.diff(commit.hash, p, '--name-only').split('\n')]
+            edited_file_paths = {f for p in commit.parents for f in
+                                 git_repo.git.diff(commit.hash, p, '--name-only').split('\n')}
             # edited_file_paths = _get_edited_file_paths_since_split(git_repo, commit)
 
             if (args['max_modifications'] > 0) and \
@@ -1126,18 +1126,20 @@ def _process_commit(args):
     return extracted_result
 
 
-def _process_repo_serial(repo_string, sqlite_db_file, use_blocks=False,
+def _process_repo_serial(repo_string, sqlite_db_file, commits, use_blocks=False,
                          no_of_processes=os.cpu_count(), exclude=None, blame_C='-C',
-                         max_modifications=0, timeout=0, _p_commits=[]):
+                         max_modifications=0, timeout=0):
     """ Processes all commits in a given git repository in a serial manner.
 
     Args:
         repo_string: path to the git repository that is mined
         sqlite_db_file: path (including database name) where the sqlite database will be created
+        commits: list of commits that have to be processed
         use_blocks: bool, determins if analysis is performed on block or line basis
         exclude: file paths that are excluded from the analysis
         blame_C: string for the blame C option
-        _p_commits: list of commits that are already in the database
+        max_modifications: ignore commit if there are more modifications
+        timeout: stop processing commit after given time in seconds
 
     Returns:
         sqlite database will be written at specified location
@@ -1151,8 +1153,6 @@ def _process_repo_serial(repo_string, sqlite_db_file, use_blocks=False,
 
     df_commits = pd.DataFrame()
     df_edits = pd.DataFrame()
-
-    commits = [commit for commit in git_repo.get_list_commits() if commit.hash not in _p_commits]
 
     con = sqlite3.connect(sqlite_db_file)
 
@@ -1170,20 +1170,22 @@ def _process_repo_serial(repo_string, sqlite_db_file, use_blocks=False,
             result['edits'].to_sql('edits', con, if_exists='append')
 
 
-def _process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
+def _process_repo_parallel(repo_string, sqlite_db_file, commits, use_blocks=False,
                           no_of_processes=os.cpu_count(), chunksize=1, exclude=None, blame_C='-C',
-                          max_modifications=0, timeout=0, _p_commits=[]):
+                          max_modifications=0, timeout=0):
     """ Processes all commits in a given git repository in a parallel manner.
 
     Args:
         repo_string: path to the git repository that is mined
         sqlite_db_file: path (including database name) where the sqlite database will be created
+        commits: list of commits that are already in the database
         use_blocks: bool, determins if analysis is performed on block or line basis
         no_of_processes: number of parallel processes that are spawned
         chunksize: number of tasks that are assigned to a process at a time
         exclude: file paths that are excluded from the analysis
         blame_C: string for the blame C option
-        _p_commits: list of commits that are already in the database
+        max_modifications: ignore commit if there are more modifications
+        timeout: stop processing commit after given time in seconds
 
     Returns:
         sqlite database will be written at specified location
@@ -1197,7 +1199,7 @@ def _process_repo_parallel(repo_string, sqlite_db_file, use_blocks=False,
     args = [{'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
              'exclude_paths': exclude_paths, 'blame_C': blame_C, 'no_of_processes': no_of_processes,
              'max_modifications': max_modifications, 'timeout': timeout}
-            for commit in git_repo.get_list_commits() if commit.hash not in _p_commits]
+            for commit in commits]
 
     con = sqlite3.connect(sqlite_db_file)
     p = Pool(no_of_processes)
@@ -1341,6 +1343,14 @@ def get_unified_changes(repo_string, commit_hash, file_path):
     return df
 
 def mining_state_summary(repo_string, sqlite_db_file):
+    """ Prints mining progress of database and returns dataframe with details on missing commits.
+
+    Args:
+        repo_string: path to the git repository that is mined
+
+    Returns:
+        dataframe with details on missing commits
+    """
     git_repo = pydriller.GitRepository(repo_string)
     if os.path.exists(sqlite_db_file):
         try:
@@ -1359,15 +1369,32 @@ def mining_state_summary(repo_string, sqlite_db_file):
     if not p_commits.issubset({c.hash for c in commits}):
         raise Exception("The database does not match the provided repository.")
 
-    print(len(p_commits), '/', len(commits), '(' + str(len(p_commits)/len(commits)*100) +
-          '%) of commits were successfully mined.')
+    no_of_commits = len({c.hash for c in commits})
+    print('{} / {} ({:.2f}%) of commits were successfully mined.'.format(
+            len(p_commits), no_of_commits, len(p_commits) / no_of_commits * 100))
 
     u_commits = [c for c in commits if c.hash not in p_commits]
 
-    u_commit_info = {'hash': [], 'is_merge': []}
-    for u_commit in u_commits:
-        u_commit_info['hash'].append(u_commit.hash)
-        u_commit_info['is_merge'].append(u_commit.merge)
+    u_commit_info = {'hash': [],
+                     'is_merge': [],
+                     'modifications': [],
+                     'author_name': [],
+                     'author_email': [],
+                     'author_date': []}
+    for c in tqdm(u_commits):
+        u_commit_info['hash'].append(c.hash)
+        u_commit_info['is_merge'].append(c.merge)
+
+        if c.merge:
+            u_commit_info['modifications'].append(len({f for p in c.parents for f in
+                                        git_repo.git.diff(c.hash, p, '--name-only').split('\n')}))
+            #print(c.modifications)
+        else:
+            u_commit_info['modifications'].append(len(c.modifications))
+
+        u_commit_info['author_name'].append(c.author.name)
+        u_commit_info['author_email'].append(c.author.email)
+        u_commit_info['author_date'].append(c.author_date.strftime('%Y-%m-%d %H:%M:%S'))
 
     u_commits_info = pd.DataFrame(u_commit_info)
 
@@ -1375,7 +1402,7 @@ def mining_state_summary(repo_string, sqlite_db_file):
 
 def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
                   no_of_processes=os.cpu_count(), chunksize=1, exclude=[], blame_C='-C',
-                  max_modifications=0, timeout=0):
+                  max_modifications=0, timeout=0, commits=None):
     """ Creates sqlite database with details on commits and edits for a given git repository.
 
     Args:
@@ -1386,10 +1413,14 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
         chunksize: number of tasks that are assigned to a process at a time
         exclude: file paths that are excluded from the analysis
         blame_C: string for the blame C option
+        max_modifications: ignore commit if there are more modifications
+        timeout: stop processing commit after given time in seconds
+        commits: only consider specific set of commits
 
     Returns:
         sqlite database will be written at specified location
     """
+    git_repo = pydriller.GitRepository(repo_string)
     if os.path.exists(sqlite_db_file):
         try:
             with sqlite3.connect(sqlite_db_file) as con:
@@ -1450,17 +1481,27 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
             con.commit()
             p_commits = []
 
+    if commits is None:
+        u_commits = [c for c in git_repo.get_list_commits() if c.hash not in p_commits]
+    else:
+        c_commits = set(c.hash
+                        for c in pydriller.GitRepository(repo_string).get_list_commits())
+        if not set(commits).issubset(c_commits):
+            raise Exception("At least one provided commit does not exist in the repository.")
+        commits = [git_repo.get_commit(h) for h in commits]
+        u_commits = [c for c in commits if c.hash not in p_commits]
+
     if no_of_processes > 1:
         _process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
-                              use_blocks=use_blocks, no_of_processes=no_of_processes,
-                              chunksize=chunksize, exclude=exclude, blame_C=blame_C,
-                              max_modifications=max_modifications, timeout=timeout,
-                              _p_commits=p_commits)
+                               commits=u_commits, use_blocks=use_blocks,
+                               no_of_processes=no_of_processes, chunksize=chunksize,
+                               exclude=exclude, blame_C=blame_C,
+                               max_modifications=max_modifications, timeout=timeout)
     else:
         _process_repo_serial(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
-                            use_blocks=use_blocks, no_of_processes=no_of_processes, exclude=exclude,
-                            blame_C=blame_C, max_modifications=max_modifications, timeout=timeout,
-                            _p_commits=p_commits)
+                             commits=u_commits, use_blocks=use_blocks,
+                             no_of_processes=no_of_processes, exclude=exclude,
+                             blame_C=blame_C, max_modifications=max_modifications, timeout=timeout)
 
 ####################################################################################################
 

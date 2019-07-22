@@ -556,7 +556,7 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
 
     # Next, metadata on all identified edits is extracted and added to a pandas DataFrame.
     edits_info = pd.DataFrame()
-    for _, edit in tqdm(edits.iterrows(), leave=False, descr=commit.hash[0:7] + ' edits 1/1',
+    for _, edit in tqdm(edits.iterrows(), leave=False, desc=commit.hash[0:7] + ' edits 1/1',
                         disable=no_of_processes>1):
         e = {}
         # Extract general information.
@@ -710,7 +710,7 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
     _, edits1 = _identify_edits(deleted_lines1, added_lines, use_blocks=use_blocks)
     _, edits2 = _identify_edits(deleted_lines2, added_lines, use_blocks=use_blocks)
 
-    for _, edit in tqdm(edits1.iterrows(), leave=False, descr='\t\t' + commit.hash[0:7] +
+    for _, edit in tqdm(edits1.iterrows(), leave=False, desc='\t\t' + commit.hash[0:7] +
                         ' edits 1/2', disable=no_of_processes>1):
         e = {}
         # Extract general information.
@@ -722,7 +722,7 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
 
         edits_info = edits_info.append(e, ignore_index=True, sort=False)
 
-    for _, edit in tqdm(edits2.iterrows(), leave=False, descr='\t\t' + commit.hash[0:7] +
+    for _, edit in tqdm(edits2.iterrows(), leave=False, desc='\t\t' + commit.hash[0:7] +
                         ' edits 2/2', disable=no_of_processes>1):
         e = {}
         # Extract general information.

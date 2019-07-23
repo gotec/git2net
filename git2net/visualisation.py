@@ -10,8 +10,10 @@ import git2net
 import pathpy as pp
 import sqlite3
 import datetime
+from tqdm import tqdm
+import math
 
-def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=False, with_start=False,
+def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=None, with_start=False,
                            merge_renaming=True):
     """ Returns line editing DAG as well as line editing paths.
 
@@ -44,156 +46,189 @@ def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=False,
     except sqlite3.OperationalError:
         raise Exception("You either provided no database or a database not created with git2net. " +
                         "Please provide a valid datatabase mined with 'use_blocks=False'.")
-
-    # Extract required data from the provided database.
-    commits = pd.read_sql("""SELECT hash, author_name, author_date FROM commits""", con)
-    edits = pd.read_sql("""SELECT levenshtein_dist,
-                                  old_path,
-                                  new_path,
-                                  commit_hash,
-                                  original_commit_deletion,
-                                  original_commit_addition,
-                                  original_line_no_deletion,
-                                  original_line_no_addition,
-                                  original_file_path_deletion,
-                                  original_file_path_addition,
-                                  post_starting_line_no,
-                                  edit_type
-                           FROM edits""", con)
-
-    # Filter edits table if only edits from specific commits are considered.
-    if commit_hashes:
-        edits = edits.loc[[x in commit_hashes for x in edits.commit_hash], :]
-
-    # Rename file paths to latest name if option is selected.
     if merge_renaming:
+        print('Searching for aliases')
         # Identify files that have been renamed.
         _, aliases = git2net.identify_file_renaming(path)
-        # Update their name in the edits table.
-        for key, value in aliases.items():
-            edits.replace(key, value[0], inplace=True)
-
-    # Filter edits table if specific files are considered. Has to be done after renaming.
-    if not file_paths == False:
-        edits = edits.loc[[x in file_paths for x in edits.new_path], :]
 
     dag = pp.DAG()
     node_info = {}
     node_info['colors'] = {}
-    # node_info['authors'] = {}
+    node_info['time'] = {}
     # node_info['file_paths'] = {}
     # node_info['edit_distance'] = {}
     edge_info = {}
     edge_info['colors'] = {}
-    # edge_info['weights'] = {}
+    edge_info['weights'] = {}
 
-    # Get author and date of deletions.
-    edits = pd.merge(edits, commits, how='left', left_on='original_commit_deletion',
-                            right_on='hash').drop(['hash'], axis=1)
-    edits.rename(columns = {'author_name':'author_name_deletion',
-                            'author_date': 'author_date_deletion'}, inplace = True)
+    # Extract required data from the provided database.
+    print('Querying commits')
+    commits = pd.read_sql("""SELECT hash, author_name, author_date FROM commits""", con)
+    print('Querying edits')
+    edits = pd.DataFrame()
+    no_of_edits = pd.read_sql("""SELECT count(*) FROM edits""", con).iloc[0, 0]
+    chunksize = 1000
+    for edits in tqdm(pd.read_sql("""SELECT levenshtein_dist,
+                                            old_path,
+                                            new_path,
+                                            commit_hash,
+                                            original_commit_deletion,
+                                            original_commit_addition,
+                                            original_line_no_deletion,
+                                            original_line_no_addition,
+                                            original_file_path_deletion,
+                                            original_file_path_addition,
+                                            post_starting_line_no,
+                                            edit_type
+                                      FROM edits""", con, chunksize=chunksize),
+                            total = math.ceil(no_of_edits / chunksize)):
 
-    # Get author and date of additions.
-    edits = pd.merge(edits, commits, how='left', left_on='original_commit_addition',
-                            right_on='hash').drop(['hash'], axis=1)
-    edits.rename(columns = {'author_name':'author_name_addition',
-                            'author_date': 'author_date_addition'}, inplace = True)
 
-     # Get current author and date
-    edits = pd.merge(edits, commits, how='left', left_on='commit_hash',
-                            right_on='hash').drop(['hash'], axis=1)
 
-    # Sort edits by author date.
-    edits.sort_values('author_date', ascending=True, inplace=True)
+        # Filter edits table if only edits from specific commits are considered.
+        if commit_hashes is not None:
+            edits = edits.loc[[x in commit_hashes for x in edits.commit_hash], :]
 
-    file_paths = set()
+        # Rename file paths to latest name if option is selected.
+        if merge_renaming:
+            # Update their name in the edits table.
+            for key, value in aliases.items():
+                edits.replace(key, value[0], inplace=True)
 
-    for _, edit in edits.iterrows():
-        if edit.edit_type == 'replacement':
-            # Generate name of target node.
-            target = 'L' + str(int(edit.post_starting_line_no)) + ' ' + \
-                     edit.new_path + ' ' + \
-                     edit.commit_hash[0:7]
+        # Filter edits table if specific files are considered. Has to be done after renaming.
+        if file_paths is not None:
+            edits = edits.loc[[x in file_paths for x in edits.new_path], :]
 
-            # Source of deletion must exist.
-            source_deletion = 'L' + str(int(edit.original_line_no_deletion)) + ' ' + \
-                              edit.original_file_path_deletion + ' ' + \
-                              edit.original_commit_deletion[0:7]
-            dag.add_edge(source_deletion, target)
-            edge_info['colors'][(source_deletion, target)] = 'white'
-            # Check id source of addition exists.
-            if edit.original_commit_addition is not None:
-                source_addition = 'L' + str(int(edit.original_line_no_addition)) + ' ' + \
-                                  edit.original_file_path_addition + ' ' + \
-                                  edit.original_commit_addition[0:7]
-                dag.add_edge(source_addition, target)
-                edge_info['colors'][(source_addition, target)] = '#FBB13C' # yellow
-        elif edit.edit_type == 'deletion':
-            # An edit in a file can only change lines in that file, not in the file the line was
-            # copied from.
-            if edit.original_file_path_deletion == edit.old_path:
+        # Get author and date of deletions.
+        edits = pd.merge(edits, commits, how='left', left_on='original_commit_deletion',
+                                right_on='hash').drop(['hash'], axis=1)
+        edits.rename(columns = {'author_name':'author_name_deletion',
+                                'author_date': 'author_date_deletion'}, inplace = True)
+
+        # Get author and date of additions.
+        edits = pd.merge(edits, commits, how='left', left_on='original_commit_addition',
+                                right_on='hash').drop(['hash'], axis=1)
+        edits.rename(columns = {'author_name':'author_name_addition',
+                                'author_date': 'author_date_addition'}, inplace = True)
+
+        # Get current author and date
+        edits = pd.merge(edits, commits, how='left', left_on='commit_hash',
+                                right_on='hash').drop(['hash'], axis=1)
+
+        file_paths = set()
+
+        # Sort edits by author date.
+        #print('Sorting edits')
+        #edits.sort_values('author_date', ascending=True, inplace=True)
+
+        for _, edit in edits.iterrows():
+            if edit.edit_type == 'replacement':
                 # Generate name of target node.
-                target = 'deleted L' + str(int(edit.original_line_no_deletion)) + ' ' + \
-                        edit.original_file_path_deletion + ' ' + \
-                        edit.original_commit_deletion[0:7]
+                target = 'L' + str(int(edit.post_starting_line_no)) + ' ' + \
+                        edit.new_path + ' ' + \
+                        edit.commit_hash
 
                 # Source of deletion must exist.
                 source_deletion = 'L' + str(int(edit.original_line_no_deletion)) + ' ' + \
                                 edit.original_file_path_deletion + ' ' + \
-                                edit.original_commit_deletion[0:7]
+                                edit.original_commit_deletion
                 dag.add_edge(source_deletion, target)
                 edge_info['colors'][(source_deletion, target)] = 'white'
+                edge_info['weights'][(source_deletion, target)] = edit.levenshtein_dist
+                node_info['time'][target] = edit.author_date
+                node_info['time'][source_deletion] = edit.author_date_deletion
+                # Check id source of addition exists.
+                if edit.original_commit_addition is not None:
+                    source_addition = 'L' + str(int(edit.original_line_no_addition)) + ' ' + \
+                                    edit.original_file_path_addition + ' ' + \
+                                    edit.original_commit_addition
+                    dag.add_edge(source_addition, target)
+                    edge_info['colors'][(source_addition, target)] = '#FBB13C' # yellow
+                    edge_info['weights'][(source_addition, target)] = edit.levenshtein_dist
+                    node_info['time'][target] = edit.author_date
+                    node_info['time'][source_addition] = edit.author_date_addition
+            elif edit.edit_type == 'deletion':
+                # An edit in a file can only change lines in that file, not in the file the line was
+                # copied from.
+                if edit.original_file_path_deletion == edit.old_path:
+                    # Generate name of target node.
+                    target = 'deleted L' + str(int(edit.original_line_no_deletion)) + ' ' + \
+                            edit.original_file_path_deletion + ' ' + \
+                            edit.original_commit_deletion
+
+                    # Source of deletion must exist.
+                    source_deletion = 'L' + str(int(edit.original_line_no_deletion)) + ' ' + \
+                                    edit.original_file_path_deletion + ' ' + \
+                                    edit.original_commit_deletion
+                    dag.add_edge(source_deletion, target)
+                    edge_info['colors'][(source_deletion, target)] = 'white'
+                    edge_info['weights'][(source_deletion, target)] = edit.levenshtein_dist
+                    node_info['time'][target] = edit.author_date
+                    node_info['time'][source_deletion] = edit.author_date_deletion
+                # else:
+                #     print(edit)
+                #     copied_from = 'L' + str(int(edit.original_line_no_deletion)) + ' ' + \
+                #                     edit.original_file_path_deletion + ' ' + \
+                #                     edit.original_commit_deletion
+
+                #     copied_to = 'L' + str(int(edit.post_starting_line_no)) + ' ' + \
+                #         edit.new_path + ' ' + \
+                #         edit.commit_hash
+
+                #     #found_copied_to = False
+                #     #for copied_to in dag.successors[copied_from]:
+                #     #    if copied_to.split(' ')[1] == edit.old_path:
+                #     #        found_copied_to = True
+                #     #        break
+                #     #assert found_copied_to
+                #     dag.add_edge(copied_to, 'deleted ' + copied_to)
+                #     edge_info['colors'][(copied_to, 'deleted ' + copied_to)] = 'white'
+                #     edge_info['weights'][(copied_to, 'deleted ' + copied_to)] = edit.levenshtein_dist
+            elif edit.edit_type == 'addition':
+                # Generate name of target node.
+                target = 'L' + str(int(edit.post_starting_line_no)) + ' ' + \
+                        edit.new_path + ' ' + \
+                        edit.commit_hash
+
+                # Add file path as source and add file path to file_paths list.
+                source = edit.new_path
+                file_paths.add(source)
+                dag.add_edge(source, target)
+                edge_info['colors'][(source, target)] = 'gray'
+                edge_info['weights'][(source, target)] = edit.levenshtein_dist
+                node_info['time'][target] = edit.author_date
+
+                # Check id source of addition exists.
+                if edit.original_commit_addition is not None:
+                    source_addition = 'L' + str(int(edit.original_line_no_addition)) + ' ' + \
+                                    edit.original_file_path_addition + ' ' + \
+                                    edit.original_commit_addition
+                    dag.add_edge(source_addition, target)
+                    edge_info['colors'][(source_addition, target)] = '#FBB13C'
+                    edge_info['weights'][(source_addition, target)] = edit.levenshtein_dist
+                    node_info['time'][target] = edit.author_date
+                    node_info['time'][source_addition] = edit.author_date_addition
+            elif edit.edit_type == 'file_renaming':
+                pass
             else:
-                copied_from = 'L' + str(int(edit.original_line_no_deletion)) + ' ' + \
-                                edit.original_file_path_deletion + ' ' + \
-                                edit.original_commit_deletion[0:7]
-                found_copied_to = False
-                for copied_to in dag.successors[copied_from]:
-                    if copied_to.split(' ')[1] == edit.old_path:
-                        found_copied_to = True
-                        break
-                assert found_copied_to
-                dag.add_edge(copied_to, 'deleted ' + copied_to)
-                edge_info['colors'][(copied_to, 'deleted ' + copied_to)] = 'white'
-        elif edit.edit_type == 'addition':
-            # Generate name of target node.
-            target = 'L' + str(int(edit.post_starting_line_no)) + ' ' + \
-                     edit.new_path + ' ' + \
-                     edit.commit_hash[0:7]
+                raise Exception("Unexpected error in 'extract_editing_paths'.")
 
-            # Add file path as source and add file path to file_paths list.
-            source = edit.new_path
-            file_paths.add(source)
-            dag.add_edge(source, target)
-            edge_info['colors'][(source, target)] = 'gray'
-
-            # Check id source of addition exists.
-            if edit.original_commit_addition is not None:
-                source_addition = 'L' + str(int(edit.original_line_no_addition)) + ' ' + \
-                                  edit.original_file_path_addition + ' ' + \
-                                  edit.original_commit_addition[0:7]
-                dag.add_edge(source_addition, target)
-                edge_info['colors'][(source_addition, target)] = '#FBB13C'
-        elif edit.edit_type == 'file_renaming':
-            pass
-        else:
-            raise Exception("Unexpected error in 'extract_editing_paths'.")
-
-    for node in dag.nodes:
+    for node in tqdm(dag.nodes):
         if node in file_paths:
             node_info['colors'][node] = 'gray'
-        elif '#FBB13C' in [edge_info['colors'][n] for n in [(x, node)
-                                                  for x in dag.predecessors[node]]]:
-            node_info['colors'][node] = '#FBB13C' # yellow
-        elif node.startswith('deleted'):
-            node_info['colors'][node] = '#A8322D' # red
-        elif 'white' not in [edge_info['colors'][n] for n in [(node, x)
-                                                    for x in dag.successors[node]]]:
-            node_info['colors'][node] = '#2E5EAA' # blue
-        elif not dag.predecessors[node].isdisjoint(file_paths):
-            node_info['colors'][node] = '#218380' # green
         else:
-            node_info['colors'][node] = '#73D2DE' # light blue
+            if '#FBB13C' in [edge_info['colors'][n] for n in [(x, node)
+                                                    for x in dag.predecessors[node]]]:
+                node_info['colors'][node] = '#FBB13C' # yellow
+            elif node.startswith('deleted'):
+                node_info['colors'][node] = '#A8322D' # red
+            elif 'white' not in [edge_info['colors'][n] for n in [(node, x)
+                                                        for x in dag.successors[node]]]:
+                node_info['colors'][node] = '#2E5EAA' # blue
+            elif not dag.predecessors[node].isdisjoint(file_paths):
+                node_info['colors'][node] = '#218380' # green
+            else:
+                node_info['colors'][node] = '#73D2DE' # light blue
 
     if not with_start:
         for file_path in file_paths:

@@ -519,7 +519,7 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
 
     # Parse diff of given modification to extract added and deleted lines
     parsed_lines = git_repo.parse_diff(modification.diff)
-
+   
     deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
     added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
@@ -539,44 +539,52 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
     # is executed on the current commit.
     blame_info_parent = None
     blame_info_commit = None
-    if len(deleted_lines) > 0:
-        assert len(commit.parents) == 1
-        blame_parent = git_repo.git.blame(commit.parents[0],
-                                          _parse_blame_C(blame_C) +
-                                          ['-w', '--show-number', '--porcelain'],
-                                          modification.old_path)
-        blame_info_parent = _parse_porcelain_blame(blame_parent)
+        
+    try:
+    
+        if len(deleted_lines) > 0:
+            assert len(commit.parents) == 1
+            blame_parent = git_repo.git.blame(commit.parents[0],
+                                              _parse_blame_C(blame_C) +
+                                              ['-w', '--show-number', '--porcelain'],
+                                              modification.old_path)
+            blame_info_parent = _parse_porcelain_blame(blame_parent)
 
-    if len(added_lines) > 0:
-        blame_commit = git_repo.git.blame(commit.hash,
-                                          _parse_blame_C(blame_C) +
-                                          ['-w', '--show-number', '--porcelain'],
-                                          modification.new_path)
-        blame_info_commit = _parse_porcelain_blame(blame_commit)
+        if len(added_lines) > 0:
+            print(commit.hash)
+            print(modification.new_path)
+            blame_commit = git_repo.git.blame(commit.hash,
+                                              _parse_blame_C(blame_C) +
+                                              ['-w', '--show-number', '--porcelain'],
+                                              modification.new_path)
+            blame_info_commit = _parse_porcelain_blame(blame_commit)
+        
+    except GitCommandError:
+        return pd.DataFrame()
+    else:    
+        # Next, metadata on all identified edits is extracted and added to a pandas DataFrame.
+        edits_info = pd.DataFrame()
+        for _, edit in tqdm(edits.iterrows(), leave=False, desc=commit.hash[0:7] + ' edits 1/1',
+                            disable=no_of_processes>1):
+            e = {}
+            # Extract general information.
+            e['filename'] = modification.filename
+            e['new_path'] = modification.new_path
+            e['old_path'] = modification.old_path
+            e['commit_hash'] = commit.hash
+            e['total_added_lines'] = modification.added
+            e['total_removed_lines'] = modification.removed
+            e['cyclomatic_complexity_of_file'] = modification.complexity
+            e['lines_of_code_in_file'] = modification.nloc
+            e['modification_type'] = modification.change_type.name
+            e['edit_type'] = edit.type
 
-    # Next, metadata on all identified edits is extracted and added to a pandas DataFrame.
-    edits_info = pd.DataFrame()
-    for _, edit in tqdm(edits.iterrows(), leave=False, desc=commit.hash[0:7] + ' edits 1/1',
-                        disable=no_of_processes>1):
-        e = {}
-        # Extract general information.
-        e['filename'] = modification.filename
-        e['new_path'] = modification.new_path
-        e['old_path'] = modification.old_path
-        e['commit_hash'] = commit.hash
-        e['total_added_lines'] = modification.added
-        e['total_removed_lines'] = modification.removed
-        e['cyclomatic_complexity_of_file'] = modification.complexity
-        e['lines_of_code_in_file'] = modification.nloc
-        e['modification_type'] = modification.change_type.name
-        e['edit_type'] = edit.type
+            e.update(_get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_parent,
+                                      blame_info_commit, use_blocks=use_blocks))
 
-        e.update(_get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_parent,
-                                  blame_info_commit, use_blocks=use_blocks))
+            edits_info = edits_info.append(e, ignore_index=True, sort=False)
 
-        edits_info = edits_info.append(e, ignore_index=True, sort=False)
-
-    return edits_info
+        return edits_info
 
 def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, blame_C='-C',
                          no_of_processes=os.cpu_count()):

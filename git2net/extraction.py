@@ -551,8 +551,6 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
             blame_info_parent = _parse_porcelain_blame(blame_parent)
 
         if len(added_lines) > 0:
-            print(commit.hash)
-            print(modification.new_path)
             blame_commit = git_repo.git.blame(commit.hash,
                                               _parse_blame_C(blame_C) +
                                               ['-w', '--show-number', '--porcelain'],

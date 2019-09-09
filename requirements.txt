@@ -6,3 +6,4 @@ python-levenshtein
 pathpy2
 lizard
 pydriller
+python-dateutil

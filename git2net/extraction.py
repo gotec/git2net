@@ -610,10 +610,18 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
                                            _parse_blame_C(blame_C) +
                                                 ['-w', '--show-number', '--porcelain'],
                                            modification_info['old_path'])
-        parent_blame1 = _parse_porcelain_blame(parent_blame1).rename(
-                        columns={'line_content': 'pre_line_content',
-                                 'line_number': 'pre_line_number'})
-        parent_blame1.loc[:, 'pre_commit'] = commit.parents[0]
+        if len(parent_blame1) > 0:
+            parent_blame1 = _parse_porcelain_blame(parent_blame1).rename(
+                            columns={'line_content': 'pre_line_content',
+                                     'line_number': 'pre_line_number'})
+            parent_blame1.loc[:, 'pre_commit'] = commit.parents[0]
+        else:
+            parent_blame1 = pd.DataFrame({'original_commit_hash': [],
+                                          'original_line_no': [],
+                                          'original_file_path': [],
+                                          'pre_line_content': [],
+                                          'pre_line_number': [],
+                                          'pre_commit': []})
     except GitCommandError:
         parent_blame1 = pd.DataFrame({'original_commit_hash': [],
                                       'original_line_no': [],
@@ -627,10 +635,18 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
                                        _parse_blame_C(blame_C) +
                                             ['-w', '--show-number', '--porcelain'],
                                        modification_info['old_path'])
-        parent_blame2 = _parse_porcelain_blame(parent_blame2).rename(
-                        columns={'line_content': 'pre_line_content',
-                                 'line_number': 'pre_line_number'})
-        parent_blame2.loc[:, 'pre_commit'] = commit.parents[1]
+        if len(parent_blame2) > 0:
+            parent_blame2 = _parse_porcelain_blame(parent_blame2).rename(
+                            columns={'line_content': 'pre_line_content',
+                                     'line_number': 'pre_line_number'})
+            parent_blame2.loc[:, 'pre_commit'] = commit.parents[1]
+        else:
+            parent_blame2 = pd.DataFrame({'original_commit_hash': [],
+                                          'original_line_no': [],
+                                          'original_file_path': [],
+                                          'pre_line_content': [],
+                                          'pre_line_number': [],
+                                          'pre_commit': []})
     except GitCommandError:
         parent_blame2 = pd.DataFrame({'original_commit_hash': [],
                                       'original_line_no': [],
@@ -645,9 +661,16 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
                                            _parse_blame_C(blame_C) +
                                                 ['-w', '--show-number', '--porcelain'],
                                            modification_info['new_path'])
-        current_blame = _parse_porcelain_blame(current_blame).rename(
-                                                    columns={'line_content': 'post_line_content',
-                                                            'line_number': 'post_line_number'})
+        if len(current_blame) > 0:
+            current_blame = _parse_porcelain_blame(current_blame).rename(
+                                                        columns={'line_content': 'post_line_content',
+                                                                'line_number': 'post_line_number'})
+        else:
+            current_blame = pd.DataFrame({'original_commit_hash': [],
+                                      'original_line_no': [],
+                                      'original_file_path': [],
+                                      'post_line_content': [],
+                                      'post_line_number': []})
     except GitCommandError:
         current_blame = pd.DataFrame({'original_commit_hash': [],
                                       'original_line_no': [],
@@ -971,11 +994,11 @@ def _process_commit(args):
     except TimeoutException:
         print('Timeout processing commit: ', commit.hash)
         extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
-    except Exception:
-        print('Error processing commit: ', commit.hash)
-        extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
-    else:
-        signal.alarm(0)
+    #except Exception:
+    #    print('Error processing commit: ', commit.hash)
+    #    extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
+    #else:
+    #    signal.alarm(0)
 
     return extracted_result
 

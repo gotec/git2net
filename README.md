@@ -12,7 +12,7 @@ platforms. Assuming you are using `pip`, you can install latest version of `git2
 > pip install git2net
 ```
 
-This also installs the necessary dependencies.
+This also installs the necessary dependencies. `git2net` depends on the `python-Levenshtein` package to compute Levenshtein distances for edited lines of code. On sytems running Windows, automatically compiling this C based module might fail during installation. In this case, unofficial Windows binaries can be found [here](https://www.lfd.uci.edu/~gohlke/pythonlibs/#python-levenshtein), which might help you get started.
 
 ## How to use git2net
 

@@ -6,7 +6,7 @@
 
 import pydriller
 import pandas as pd
-import git2net
+from git2net import git2net
 import pathpy as pp
 import sqlite3
 import datetime
@@ -96,9 +96,10 @@ def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=None, 
                 edits.replace(key, value[0], inplace=True)
 
         # Filter edits table if specific files are considered. Has to be done after renaming.
+                       
         if file_paths is not None:
             edits = edits.loc[[x in file_paths for x in edits.new_path], :]
-
+            
         # Get author and date of deletions.
         edits = pd.merge(edits, commits, how='left', left_on='original_commit_deletion',
                                 right_on='hash').drop(['hash'], axis=1)
@@ -115,7 +116,7 @@ def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=None, 
         edits = pd.merge(edits, commits, how='left', left_on='commit_hash',
                                 right_on='hash').drop(['hash'], axis=1)
 
-        file_paths = set()
+        file_paths_dag = set()
 
         # Sort edits by author date.
         #print('Sorting edits')
@@ -124,7 +125,7 @@ def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=None, 
         for _, edit in edits.iterrows():
             if edit.edit_type == 'replacement':
                 # Generate name of target node.
-                target = 'L' + str(int(edit.post_starting_line_no)) + ' ' + \
+                target = 'L' + str(int(float(edit.post_starting_line_no))) + ' ' + \
                         edit.new_path + ' ' + \
                         edit.commit_hash
 
@@ -186,13 +187,13 @@ def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=None, 
                 #     edge_info['weights'][(copied_to, 'deleted ' + copied_to)] = edit.levenshtein_dist
             elif edit.edit_type == 'addition':
                 # Generate name of target node.
-                target = 'L' + str(int(edit.post_starting_line_no)) + ' ' + \
+                target = 'L' + str(int(float(edit.post_starting_line_no))) + ' ' + \
                         edit.new_path + ' ' + \
                         edit.commit_hash
 
                 # Add file path as source and add file path to file_paths list.
                 source = edit.new_path
-                file_paths.add(source)
+                file_paths_dag.add(source)
                 dag.add_edge(source, target)
                 edge_info['colors'][(source, target)] = 'gray'
                 edge_info['weights'][(source, target)] = edit.levenshtein_dist
@@ -214,7 +215,7 @@ def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=None, 
                 raise Exception("Unexpected error in 'extract_editing_paths'.")
 
     for node in tqdm(dag.nodes):
-        if node in file_paths:
+        if node in file_paths_dag:
             node_info['colors'][node] = 'gray'
         else:
             if '#FBB13C' in [edge_info['colors'][n] for n in [(x, node)
@@ -225,13 +226,13 @@ def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=None, 
             elif 'white' not in [edge_info['colors'][n] for n in [(node, x)
                                                         for x in dag.successors[node]]]:
                 node_info['colors'][node] = '#2E5EAA' # blue
-            elif not dag.predecessors[node].isdisjoint(file_paths):
+            elif not dag.predecessors[node].isdisjoint(file_paths_dag):
                 node_info['colors'][node] = '#218380' # green
             else:
                 node_info['colors'][node] = '#73D2DE' # light blue
 
     if not with_start:
-        for file_path in file_paths:
+        for file_path in file_paths_dag:
             dag.remove_node(file_path)
 
     dag.topsort()

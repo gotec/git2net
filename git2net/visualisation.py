@@ -341,11 +341,12 @@ def get_coediting_network(db_location, time_from=None, time_to=None):
         if (datetime.datetime.strptime(row.time, '%Y-%m-%d %H:%M:%S') >= time_from) and \
            (datetime.datetime.strptime(row.time, '%Y-%m-%d %H:%M:%S') <= time_to) and not \
            (row['post_author'] == row['pre_author']):
-            t.add_edge(row['post_author'],
-                       row['pre_author'],
-                       row['time'],
-                       directed=True,
-                       timestamp_format='%Y-%m-%d %H:%M:%S')
+            if not (pd.isnull(row['post_author']) or pd.isnull(row['pre_author'])):
+                t.add_edge(row['post_author'],
+                           row['pre_author'],
+                           row['time'],
+                           directed=True,
+                           timestamp_format='%Y-%m-%d %H:%M:%S')
 
     return t, node_info, edge_info
 

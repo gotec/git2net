@@ -381,11 +381,12 @@ def get_coauthorship_network(sqlite_db_file, time_from=None, time_to=None):
     data_post = pd.merge(edits, commits, how='left', left_on='post_commit', right_on='hash') \
                     .drop(['pre_commit', 'post_commit', 'hash'], axis=1)
     data = pd.concat([data_pre, data_post])
-
+    
+    all_times = [datetime.datetime.strptime(dt, '%Y-%m-%d %H:%M:%S') for dt in data.time if not pd.isnull(dt)]
     if time_from == None:
-        time_from = datetime-datetime.strptime(min(data['time']), '%Y-%m-%d %H:%M:%S')
+        time_from = min(all_times)
     if time_to == None:
-        time_to = datetime-datetime.strptime(max(data['time']), '%Y-%m-%d %H:%M:%S')
+        time_to = max(all_times)
 
     data = data.loc[pd.to_datetime(data['time']) >= time_from, :]
     data = data.loc[pd.to_datetime(data['time']) <= time_to, :]
@@ -432,10 +433,11 @@ def get_bipartite_network(sqlite_db_file, time_from=None, time_to=None):
     data = pd.merge(edits, commits, how='left', left_on='post_commit', right_on='hash') \
                         .drop(['post_commit', 'hash'], axis=1)
 
+    all_times = [datetime.datetime.strptime(dt, '%Y-%m-%d %H:%M:%S') for dt in data.time if not pd.isnull(dt)]
     if time_from == None:
-        time_from = datetime.datetime.strptime(min(data.time), '%Y-%m-%d %H:%M:%S')
+        time_from = min(all_times)
     if time_to == None:
-        time_to = datetime.datetime.strptime(max(data.time), '%Y-%m-%d %H:%M:%S')
+        time_to = max(all_times)
 
     node_info = {}
     edge_info = {}

@@ -6,7 +6,7 @@
 
 import pydriller
 import pandas as pd
-from git2net import git2net
+import git2net
 import pathpy as pp
 import sqlite3
 import datetime
@@ -96,10 +96,10 @@ def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=None, 
                 edits.replace(key, value[0], inplace=True)
 
         # Filter edits table if specific files are considered. Has to be done after renaming.
-                       
+
         if file_paths is not None:
             edits = edits.loc[[x in file_paths for x in edits.new_path], :]
-            
+
         # Get author and date of deletions.
         edits = pd.merge(edits, commits, how='left', left_on='original_commit_deletion',
                                 right_on='hash').drop(['hash'], axis=1)
@@ -381,7 +381,7 @@ def get_coauthorship_network(sqlite_db_file, time_from=None, time_to=None):
     data_post = pd.merge(edits, commits, how='left', left_on='post_commit', right_on='hash') \
                     .drop(['pre_commit', 'post_commit', 'hash'], axis=1)
     data = pd.concat([data_pre, data_post])
-    
+
     all_times = [datetime.datetime.strptime(dt, '%Y-%m-%d %H:%M:%S') for dt in data.time if not pd.isnull(dt)]
     if time_from == None:
         time_from = min(all_times)

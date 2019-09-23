@@ -4,12 +4,12 @@
 # Allows to use git2net from the command line #
 ###############################################
 
-from extraction import mine_git_repo
-from visualisation import get_line_editing_paths
-from visualisation import get_commit_editing_paths
-from visualisation import get_coediting_network
-from visualisation import get_coauthorship_network
-from visualisation import get_bipartite_network
+from git2net.extraction import mine_git_repo
+from git2net.visualisation import get_line_editing_paths
+from git2net.visualisation import get_commit_editing_paths
+from git2net.visualisation import get_coediting_network
+from git2net.visualisation import get_coauthorship_network
+from git2net.visualisation import get_bipartite_network
 
 import argparse
 import os

@@ -6,7 +6,7 @@
 
 import pydriller
 import pandas as pd
-from extraction import identify_file_renaming
+from .extraction import identify_file_renaming
 import pathpy as pp
 import sqlite3
 import datetime

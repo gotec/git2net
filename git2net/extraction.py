@@ -6,7 +6,6 @@
 
 import sqlite3
 import os
-import argparse
 
 from multiprocessing import Pool
 
@@ -519,7 +518,7 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
 
     # Parse diff of given modification to extract added and deleted lines
     parsed_lines = git_repo.parse_diff(modification.diff)
-   
+
     deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
     added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
@@ -539,9 +538,9 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
     # is executed on the current commit.
     blame_info_parent = None
     blame_info_commit = None
-        
+
     try:
-    
+
         if len(deleted_lines) > 0:
             assert len(commit.parents) == 1
             blame_parent = git_repo.git.blame(commit.parents[0],
@@ -556,10 +555,10 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
                                               ['-w', '--show-number', '--porcelain'],
                                               modification.new_path)
             blame_info_commit = _parse_porcelain_blame(blame_commit)
-        
+
     except GitCommandError:
         return pd.DataFrame()
-    else:    
+    else:
         # Next, metadata on all identified edits is extracted and added to a pandas DataFrame.
         edits_info = pd.DataFrame()
         for _, edit in tqdm(edits.iterrows(), leave=False, desc=commit.hash[0:7] + ' edits 1/1',
@@ -1397,35 +1396,3 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
                              commits=u_commits, use_blocks=use_blocks,
                              no_of_processes=no_of_processes, exclude=exclude,
                              blame_C=blame_C, max_modifications=max_modifications, timeout=timeout)
-
-####################################################################################################
-
-### Allows to use git2net from the command line
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description='Extracts commit and co-editing data from git repositories.')
-    parser.add_argument('repo', help='Path to repository to be parsed.', type=str)
-    parser.add_argument('outfile', help='Path to SQLite DB file storing results.', type=str)
-    parser.add_argument('--use-blocks',
-        help='Compare added and deleted blocks of code rather than lines.', dest='use_blocks',
-        action='store_true', default=False)
-    parser.add_argument('--numprocesses',
-        help='Number of CPU cores used for multi-core processing. Defaults to number of CPU cores.',
-        default=os.cpu_count(), type=int)
-    parser.add_argument('--chunksize', help='Chunk size to be used in multiprocessing mapping.',
-        default=1, type=int)
-    parser.add_argument('--exclude', help='Exclude path prefixes in given file.', type=str,
-        default=None)
-    parser.add_argument('--blame-C', help="Git blame -C option. To not use -C provide ''", type=str,
-        dest='blame_C', default='-C')
-    parser.add_argument('--max-modifications', help='Do not process commits with more than given ' +
-        'number of modifications. Use 0 to disable.', dest='max_modifications', default=0, type=int)
-    parser.add_argument('--timeout', help='Stop processing commit after timeout. Use 0 to disable.',
-        default=0, type=int)
-
-    args = parser.parse_args()
-
-    mine_git_repo(args.repo, args.outfile, use_blocks=args.use_blocks,
-                  no_of_processes=args.numprocesses, chunksize=args.chunksize, exclude=args.exclude,
-                  blame_C=args.blame_C, max_modifications=args.max_modifications,
-                  timeout=args.timeout)

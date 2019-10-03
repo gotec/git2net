@@ -6,7 +6,7 @@
 
 import pydriller
 import pandas as pd
-import git2net
+from .extraction import identify_file_renaming
 import pathpy as pp
 import sqlite3
 import datetime
@@ -49,7 +49,7 @@ def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=None, 
     if merge_renaming:
         print('Searching for aliases')
         # Identify files that have been renamed.
-        _, aliases = git2net.identify_file_renaming(path)
+        _, aliases = identify_file_renaming(path)
 
     dag = pp.DAG()
     node_info = {}

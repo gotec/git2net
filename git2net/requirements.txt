@@ -1,0 +1,8 @@
+pandas
+tqdm>=4.27.0
+numpy
+scipy
+python-levenshtein
+pathpy2>=2.2.0
+lizard
+pydriller

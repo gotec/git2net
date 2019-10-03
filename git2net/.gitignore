@@ -1,0 +1,10 @@
+*.db
+.vscode/settings.json
+*.db-journal
+*.pyc
+*.html
+*.csv
+/build/*
+/dist/*
+/git2net.egg-info/*
+tmp.*

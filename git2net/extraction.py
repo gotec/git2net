@@ -1113,7 +1113,7 @@ def _process_commit(args):
         df_commit = pd.DataFrame(c, index=[0])
 
         extracted_result = {'commit': df_commit, 'edits': df_edits}
-    except KeyboardInterrupt:#TimeoutException:
+    except KeyboardInterrupt:
         print('Timeout processing commit: ', commit.hash)
         extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
 

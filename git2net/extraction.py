@@ -37,27 +37,15 @@ except ImportError:
 class TimeoutException(Exception):   # Custom exception class
     pass
 class Alarm(threading.Thread):
-    def __init__(self, timeout, tid):
+    def __init__(self, timeout):
         threading.Thread.__init__ (self)
         self.timeout = timeout
-        self.tid = tid
         self.setDaemon (True)
 
     def run(self):
         if self.timeout > 0:
             time.sleep (self.timeout)
-            #stopit.async_raise(self.tid, TimeoutException)
-            #sys.stderr.clear()
             thread.interrupt_main()
-            #raise TimeoutException
-
-# import signal
-# class TimeoutException(Exception):   # Custom exception class
-#   pass
-# def TimeoutHandler(signum, frame):   # Custom signal handler
-#   raise TimeoutException
-# # Change the behavior of SIGALRM
-# OriginalHandler = signal.signal(signal.SIGALRM,TimeoutHandler)
 
 import json
 abs_path = os.path.dirname(__file__)
@@ -1003,10 +991,7 @@ def _process_commit(args):
     git_repo = pydriller.GitRepository(args['repo_string'])
     commit = git_repo.get_commit(args['commit_hash'])
 
-    # signal.alarm(args['timeout'])
-    #tid = multiprocessing.current_process()
-    tid = threading.current_thread().ident
-    alarm = Alarm(args['timeout'], tid)
+    alarm = Alarm(args['timeout'])
     alarm.start()
 
     try:
@@ -1131,11 +1116,7 @@ def _process_commit(args):
     except KeyboardInterrupt:#TimeoutException:
         print('Timeout processing commit: ', commit.hash)
         extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
-    #except Exception:
-    #    print('Error processing commit: ', commit.hash)
-    #    extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
-    #else:
-    #    signal.alarm(0)
+
     del alarm
 
     return extracted_result

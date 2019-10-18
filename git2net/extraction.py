@@ -7,7 +7,7 @@
 import sqlite3
 import os
 
-from multiprocessing import Pool
+import multiprocessing
 
 import pandas as pd
 from tqdm import tqdm
@@ -22,16 +22,42 @@ import datetime
 import pathpy as pp
 import re
 import lizard
+import sys
 
 #from contextlib import closing
 
-import signal
+import time
+import threading
+#import stopit
+try:
+    import thread
+except ImportError:
+    import _thread as thread
+
 class TimeoutException(Exception):   # Custom exception class
-  pass
-def TimeoutHandler(signum, frame):   # Custom signal handler
-  raise TimeoutException
-# Change the behavior of SIGALRM
-OriginalHandler = signal.signal(signal.SIGALRM,TimeoutHandler)
+    pass
+class Alarm(threading.Thread):
+    def __init__(self, timeout, tid):
+        threading.Thread.__init__ (self)
+        self.timeout = timeout
+        self.tid = tid
+        self.setDaemon (True)
+
+    def run(self):
+        if self.timeout > 0:
+            time.sleep (self.timeout)
+            #stopit.async_raise(self.tid, TimeoutException)
+            #sys.stderr.clear()
+            thread.interrupt_main()
+            #raise TimeoutException
+
+# import signal
+# class TimeoutException(Exception):   # Custom exception class
+#   pass
+# def TimeoutHandler(signum, frame):   # Custom signal handler
+#   raise TimeoutException
+# # Change the behavior of SIGALRM
+# OriginalHandler = signal.signal(signal.SIGALRM,TimeoutHandler)
 
 import json
 abs_path = os.path.dirname(__file__)
@@ -510,7 +536,7 @@ def is_binary_file(filename, file_content):
         extension = re.search('.*\.([^\.]+)$', filename).groups()[0]
     except AttributeError:
         extension = None
-        
+
     if extension in binary_extensions:
         return True
     else:
@@ -521,7 +547,7 @@ def is_binary_file(filename, file_content):
         else:
             return False
 
-    
+
 def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C',
                    no_of_processes=os.cpu_count()):
     """ Returns dataframe with metadata on edits made in a given modification.
@@ -540,21 +566,21 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
 
     binary_file = is_binary_file(modification.filename, modification.diff)
     found_paths = False
-    
+
     if not binary_file:
         try:
             old_path, new_path = re.search('Binary files a?\/(.*) and b?\/(.*) differ', modification.diff.strip()).groups()
-            
+
             if old_path == 'dev/null':
                 old_path = None
             if new_path == 'dev/null':
                 new_path = None
-            
+
             found_paths = True
             binary_file = True
         except AttributeError:
             pass
-            
+
     if binary_file:
         if found_paths:
             edits = pd.DataFrame({'pre_start': None,
@@ -580,7 +606,7 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
 
         deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
         added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
-    
+
         # If there was a modification but no lines were added or removed, the file was renamed.
         if (len(deleted_lines) == 0) and (len(added_lines) == 0):
             edits = pd.DataFrame({'pre_start': None,
@@ -589,15 +615,15 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
                                   'number_of_added_lines': None,
                                   'type': 'file_renaming'}, index=[0])
         else: # If there were lines added or deleted, the specific edits are identified.
-            _, edits = _identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)        
-        
+            _, edits = _identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
+
     # In order to trace the origins of lines e execute git blame is executed. For lines that were
     # deleted with the current commit, the blame needs to be executed on the parent commit. As
     # merges are treated separately, commits should only have one parent. For added lines, git blame
     # is executed on the current commit.
     blame_info_parent = None
     blame_info_commit = None
-    
+
     try:
         if not binary_file:
             if len(deleted_lines) > 0:
@@ -617,7 +643,7 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
 
     except GitCommandError:
         return pd.DataFrame()
-    else:       
+    else:
         # Next, metadata on all identified edits is extracted and added to a pandas DataFrame.
         edits_info = pd.DataFrame()
         for _, edit in tqdm(edits.iterrows(), leave=False, desc=commit.hash[0:7] + ' edits 1/1',
@@ -638,15 +664,15 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
                 e['cyclomatic_complexity_of_file'] = modification.complexity
                 e['lines_of_code_in_file'] = modification.nloc
                 e['total_added_lines'] = modification.added
-                e['total_removed_lines'] = modification.removed       
+                e['total_removed_lines'] = modification.removed
             e['filename'] = modification.filename
             e['commit_hash'] = commit.hash
             e['modification_type'] = modification.change_type.name
             e['edit_type'] = edit.type
-            
+
             e.update(_get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_parent,
                                       blame_info_commit, use_blocks=use_blocks))
-            
+
             edits_info = edits_info.append(e, ignore_index=True, sort=False)
 
         return edits_info
@@ -676,21 +702,21 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
     file_content = git_repo.git.show('{}:{}'.format(commit.hash, modification_info['new_path']))
     file_content_p1 = git_repo.git.show('{}:{}'.format(commit.parents[0], modification_info['old_path']))
     file_content_p2 = git_repo.git.show('{}:{}'.format(commit.parents[1], modification_info['old_path']))
-    
+
     if is_binary_file(modification_info['new_path'], file_content) or \
        is_binary_file(modification_info['new_path'], file_content_p1) or \
-       is_binary_file(modification_info['new_path'], file_content_p2):       
+       is_binary_file(modification_info['new_path'], file_content_p2):
         blame_info_parent = None
         blame_info_commit = None
         added_lines = []
         deleted_lines = []
-        
+
         edits = pd.DataFrame({'pre_start': None,
                              'number_of_deleted_lines': None,
                              'post_start': None,
                              'number_of_added_lines': None,
                              'type': 'binary_file_change'}, index=[0])
-        
+
         edits_info = pd.DataFrame()
         for _, edit in edits.iterrows():
             e = {}
@@ -698,14 +724,14 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
             e['edit_type'] = edit.type
             e['total_added_lines'] = None
             e['total_removed_lines'] = None
-            e.update(modification_info)    
+            e.update(modification_info)
 
             e.update(_get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_parent,
                                           blame_info_commit, use_blocks=use_blocks))
 
 
 
-            edits_info = edits_info.append(e, ignore_index=True, sort=False)      
+            edits_info = edits_info.append(e, ignore_index=True, sort=False)
         return edits_info
     else:
         try:
@@ -977,7 +1003,11 @@ def _process_commit(args):
     git_repo = pydriller.GitRepository(args['repo_string'])
     commit = git_repo.get_commit(args['commit_hash'])
 
-    signal.alarm(args['timeout'])
+    # signal.alarm(args['timeout'])
+    #tid = multiprocessing.current_process()
+    tid = threading.current_thread().ident
+    alarm = Alarm(args['timeout'], tid)
+    alarm.start()
 
     try:
         # parse commit
@@ -1025,7 +1055,7 @@ def _process_commit(args):
                     try:
                         file_content = git_repo.git.show('{}:{}'.format(commit.hash,
                                                                          edited_file_path))
-                        
+
                         if is_binary_file(edited_file_path, file_content):
                             modification_info['cyclomatic_complexity_of_file'] = None
                             modification_info['lines_of_code_in_file'] = None
@@ -1098,7 +1128,7 @@ def _process_commit(args):
         df_commit = pd.DataFrame(c, index=[0])
 
         extracted_result = {'commit': df_commit, 'edits': df_edits}
-    except TimeoutException:
+    except KeyboardInterrupt:#TimeoutException:
         print('Timeout processing commit: ', commit.hash)
         extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
     #except Exception:
@@ -1106,6 +1136,7 @@ def _process_commit(args):
     #    extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
     #else:
     #    signal.alarm(0)
+    del alarm
 
     return extracted_result
 
@@ -1186,7 +1217,7 @@ def _process_repo_parallel(repo_string, sqlite_db_file, commits, use_blocks=Fals
             for commit in commits]
 
     con = sqlite3.connect(sqlite_db_file)
-    p = Pool(no_of_processes)
+    p = multiprocessing.Pool(no_of_processes)
     with tqdm(total=len(args), desc='Parallel ({0} processes)'.format(no_of_processes)) as pbar:
         for result in p.imap_unordered(_process_commit, args, chunksize=chunksize):
             if not result['commit'].empty:
@@ -1237,7 +1268,9 @@ def identify_file_renaming(repo_string):
             path: path from the current node to a leaf node in the dag
 
         """
-        if len(dag.successors[node]) > 0:
+        successors = dag.successors[node].difference(set(_path))
+
+        if len(successors) > 0:
             return _get_path_to_leaf_node(dag, list(dag.successors[node])[0], _path=[node] + _path)
         else:
             path = [node] + _path
@@ -1492,7 +1525,7 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
             raise Exception("At least one provided commit does not exist in the repository.")
         commits = [git_repo.get_commit(h) for h in commits]
         u_commits = [c for c in commits if c.hash not in p_commits]
-        
+
     if no_of_processes > 1:
         _process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
                                commits=u_commits, use_blocks=use_blocks,

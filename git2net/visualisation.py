@@ -96,9 +96,9 @@ def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=None, 
                 edits.replace(key, value[0], inplace=True)
 
         # Filter edits table if specific files are considered. Has to be done after renaming.
-
+        file_paths_with_aliases = {x for fp in file_paths for x in aliases[fp]}
         if file_paths is not None:
-            edits = edits.loc[[x in file_paths for x in edits.new_path], :]
+            edits = edits.loc[[x in file_paths_with_aliases for x in edits.new_path], :]
 
         # Get author and date of deletions.
         edits = pd.merge(edits, commits, how='left', left_on='original_commit_deletion',

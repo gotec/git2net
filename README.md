@@ -22,20 +22,13 @@ In addition, we have publised some motivating results as well as details on the 
 ## How to cite git2net
 
 ```
-@article{DBLP:journals/corr/abs-1903-10180,
-  author    = {Christoph Gote and
-               Ingo Scholtes and
-               Frank Schweitzer},
-  title     = {git2net - Mining Time-Stamped Co-Editing Networks from Large git Repositories},
-  journal   = {CoRR},
-  volume    = {abs/1903.10180},
-  year      = {2019},
-  url       = {http://arxiv.org/abs/1903.10180},
-  archivePrefix = {arXiv},
-  eprint    = {1903.10180},
-  timestamp = {Mon, 01 Apr 2019 14:07:37 +0200},
-  biburl    = {https://dblp.org/rec/bib/journals/corr/abs-1903-10180},
-  bibsource = {dblp computer science bibliography, https://dblp.org}
+@inproceedings{gote2019git2net,
+  title={git2net: mining time-stamped co-editing networks from large git repositories},
+  author={Gote, Christoph and Scholtes, Ingo and Schweitzer, Frank},
+  booktitle={Proceedings of the 16th International Conference on Mining Software Repositories},
+  pages={433--444},
+  year={2019},
+  organization={IEEE Press}
 }
 ```
 

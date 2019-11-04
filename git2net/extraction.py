@@ -49,7 +49,7 @@ class Alarm(threading.Thread):
 
 import json
 abs_path = os.path.dirname(__file__)
-rel_path = '../helpers/binary-extensions/binary-extensions.json'
+rel_path = 'helpers/binary-extensions/binary-extensions.json'
 with open(os.path.join(abs_path, rel_path)) as json_file:
     binary_extensions = json.load(json_file)
 
@@ -1517,4 +1517,3 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
                              commits=u_commits, use_blocks=use_blocks,
                              no_of_processes=no_of_processes, exclude=exclude,
                              blame_C=blame_C, max_modifications=max_modifications, timeout=timeout)
-                             

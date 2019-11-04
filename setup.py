@@ -29,5 +29,6 @@ setuptools.setup(
     ],
     test_suite='tests',
     keywords='co-editing networks repository mining network analysis',
-    install_requires=install_requirements
+    install_requires=install_requirements,
+    package_data={'git2net': ['helpers/binary-extensions/binary-extensions.json']},
 )

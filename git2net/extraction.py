@@ -26,6 +26,8 @@ import sys
 
 #from contextlib import closing
 
+from git2net import __version__
+
 import time
 import threading
 #import stopit
@@ -1489,7 +1491,7 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
                                 :repository,
                                 :date,
                                 :method)""",
-                        {'version': 'git2net alpha',
+                        {'version': 'git2net ' + str(__version__),
                          'repository': repo_string,
                          'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                          'method': 'blocks' if use_blocks else 'lines'})

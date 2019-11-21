@@ -22,8 +22,8 @@ def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=None, 
     Args:
         sqlite_db_file: path to sqlite database mined with git2net line method
         commit_hashes: list of commits to consider, by default all commits are considered
-        file_paths: list of files to consider, by defailt all files are considered
-        with_start: bool, determines if node for filename is included as start for all editing pahts
+        file_paths: list of files to consider, by default all files are considered
+        with_start: bool, determines if node for filename is included as start for all editing paths
         merge_renaming: bool, determines if file renaming is considered
 
     Returns:
@@ -96,8 +96,8 @@ def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=None, 
                 edits.replace(key, value[0], inplace=True)
 
         # Filter edits table if specific files are considered. Has to be done after renaming.
-        file_paths_with_aliases = {x for fp in file_paths for x in aliases[fp]}
         if file_paths is not None:
+            file_paths_with_aliases = {x for fp in file_paths for x in aliases[fp]}
             edits = edits.loc[[x in file_paths_with_aliases for x in edits.new_path], :]
 
         # Get author and date of deletions.

@@ -13,14 +13,15 @@ import datetime
 from tqdm import tqdm
 import math
 
-def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=None, with_start=False,
-                           merge_renaming=True):
+def get_line_editing_paths(sqlite_db_file, repo_string, commit_hashes=None, file_paths=None,
+                           with_start=False, merge_renaming=False):
     """ Returns line editing DAG as well as line editing paths.
 
         Node and edge infos set up to be expanded with future releases.
 
     Args:
         sqlite_db_file: path to sqlite database mined with git2net line method
+        repo_string: path to the git repository that is mined
         commit_hashes: list of commits to consider, by default all commits are considered
         file_paths: list of files to consider, by default all files are considered
         with_start: bool, determines if node for filename is included as start for all editing paths
@@ -49,7 +50,7 @@ def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=None, 
     if merge_renaming:
         print('Searching for aliases')
         # Identify files that have been renamed.
-        _, aliases = identify_file_renaming(path)
+        _, aliases = identify_file_renaming(repo_string)
 
     dag = pp.DAG()
     node_info = {}
@@ -93,7 +94,7 @@ def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=None, 
         if merge_renaming:
             # Update their name in the edits table.
             for key, value in aliases.items():
-                edits.replace(key, value[0], inplace=True)
+                edits.replace(key, value, inplace=True)
 
         # Filter edits table if specific files are considered. Has to be done after renaming.
         if file_paths is not None:
@@ -209,10 +210,11 @@ def get_line_editing_paths(sqlite_db_file, commit_hashes=None, file_paths=None, 
                     edge_info['weights'][(source_addition, target)] = edit.levenshtein_dist
                     node_info['time'][target] = edit.author_date
                     node_info['time'][source_addition] = edit.author_date_addition
-            elif edit.edit_type == 'file_renaming':
+            elif edit.edit_type == 'file_renaming' or edit.edit_type == 'binary_file_change':
                 pass
             else:
-                raise Exception("Unexpected error in 'extract_editing_paths'.")
+                raise Exception("Unexpected error in 'extract_editing_paths'. ({})"
+                                    .format(edit.edit_type))
 
     for node in tqdm(dag.nodes):
         if node in file_paths_dag:

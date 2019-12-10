@@ -1224,51 +1224,62 @@ def identify_file_renaming(repo_string):
     git_repo = pydriller.GitRepository(repo_string)
 
     dag = pp.DAG()
-    for commit in git_repo.get_list_commits():
+    for commit in tqdm(list(git_repo.get_list_commits()), desc='Creating DAG'):
         for modification in commit.modifications:
+
             if (modification.new_path not in dag.nodes) and \
                (modification.old_path == modification.new_path) and \
                (modification.change_type == pydriller.domain.commit.ModificationType.ADD):
-                dag.add_edge('added file', modification.new_path)
+                #dag.add_edge('added file', modification.new_path)
+                if modification.new_path not in dag.nodes:
+                        dag.add_node(modification.new_path)
             elif modification.old_path != modification.new_path:
                 if pd.isnull(modification.old_path):
-                    dag.add_edge('added file', modification.new_path)
+                    #dag.add_edge('added file', modification.new_path)
+                    if modification.new_path not in dag.nodes:
+                        dag.add_node(modification.new_path)
                 elif pd.isnull(modification.new_path):
-                    dag.add_edge(modification.old_path, 'deleted file')
+                    #dag.add_edge(modification.old_path, 'deleted file')
+                    pass
                 else:
-                    dag.add_edge(modification.old_path, modification.new_path)
+                    #dag.add_edge(modification.old_path, modification.new_path)
+                    dag.add_edge(modification.new_path, modification.old_path)
 
-    def _get_path_to_leaf_node(dag, node, _path=[]):
-        """ For a given node and dag returns path to leaf node with leaf.
+    dag.make_acyclic()
+    nodes = [k for k, v in dag.nodes.items() if v['indegree'] == 0 and not v['outdegree'] == 0]
+    aliases = {z: y[-1] for x in nodes for y in dag.routes_from_node(x) for z in y[:-1]}
 
-        Args:
-            dag: pathpy DAG object
-            node: node for which path is computed
-            _path=[]: subpath used for recursion
+    # def _get_path_to_leaf_node(dag, node, _path=[]):
+    #     """ For a given node and dag returns path to leaf node with leaf.
 
-        Returns:
-            path: path from the current node to a leaf node in the dag
+    #     Args:
+    #         dag: pathpy DAG object
+    #         node: node for which path is computed
+    #         _path=[]: subpath used for recursion
 
-        """
-        successors = dag.successors[node].difference(set(_path))
+    #     Returns:
+    #         path: path from the current node to a leaf node in the dag
 
-        if len(successors) > 0:
-            return _get_path_to_leaf_node(dag, list(dag.successors[node])[0], _path=[node] + _path)
-        else:
-            path = [node] + _path
-            return path
+    #     """
+    #     successors = dag.successors[node].difference(set(_path))
 
-    renamings = []
-    for node in dag.nodes:
-        if 'added file' in dag.predecessors[node]:
-            renamings.append(_get_path_to_leaf_node(dag, node))
+    #     if len(successors) > 0:
+    #         return _get_path_to_leaf_node(dag, list(dag.successors[node])[0], _path=[node] + _path)
+    #     else:
+    #         path = [node] + _path
+    #         return path
 
-    aliases = {}
-    for renaming in renamings:
-        if 'deleted file' in renaming:
-            renaming.remove('deleted file')
-        for alias in renaming:
-            aliases[alias] = renaming
+    # renamings = []
+    # for node in dag.nodes:
+    #     if 'added file' in dag.predecessors[node]:
+    #         renamings.append(_get_path_to_leaf_node(dag, node))
+
+    # aliases = {}
+    # for renaming in renamings:
+    #     if 'deleted file' in renaming:
+    #         renaming.remove('deleted file')
+    #     for alias in renaming:
+    #         aliases[alias] = renaming
 
     return dag, aliases
 

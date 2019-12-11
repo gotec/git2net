@@ -227,10 +227,12 @@ def text_entropy(text):
     Returns:
         text_entropy: text entropy of the given string
     """
-    if len(text) == 0:
+    # we only consider UTF8 characters to compute the text entropy
+    pk = [text.count(chr(i)) for i in range(256)]
+    if sum(pk) == 0:
         text_entropy = None
     else:
-        text_entropy = entropy([text.count(chr(i)) for i in range(256)], base=2)
+        text_entropy = entropy(pk, base=2)
     return text_entropy
 
 
@@ -523,20 +525,23 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
 
 
 def is_binary_file(filename, file_content):
-    try:
-        extension = re.search('.*\.([^\.]+)$', filename).groups()[0]
-    except AttributeError:
-        extension = None
-
-    if extension in binary_extensions:
-        return True
+    if filename is None:
+        return False
     else:
         try:
-            file_content.encode('utf-8', errors='strict')
-        except UnicodeEncodeError:
+            extension = re.search('.*\.([^\.]+)$', filename).groups()[0]
+        except AttributeError:
+            extension = None
+
+        if extension in binary_extensions:
             return True
         else:
-            return False
+            try:
+                file_content.encode('utf-8', errors='strict')
+            except UnicodeEncodeError:
+                return True
+            else:
+                return False
 
 
 def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C',
@@ -690,9 +695,20 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
     #   1. Changes of one or more parents are accepted.
     #   2. Changes made prior to the merge are replaced with new edits.
     # To obtain the state of the file before merging, get blame is executed on all parent commits.
-    file_content = git_repo.git.show('{}:{}'.format(commit.hash, modification_info['new_path']))
-    file_content_p1 = git_repo.git.show('{}:{}'.format(commit.parents[0], modification_info['old_path']))
-    file_content_p2 = git_repo.git.show('{}:{}'.format(commit.parents[1], modification_info['old_path']))
+    try:
+        file_content = git_repo.git.show('{}:{}'.format(commit.hash, modification_info['new_path']))
+    except GitCommandError:
+        file_content = ''
+    try:
+        file_content_p1 = git_repo.git.show('{}:{}'.format(commit.parents[0],
+                                                           modification_info['old_path']))
+    except GitCommandError:
+        file_content_p1 = ''
+    try:
+        file_content_p2 = git_repo.git.show('{}:{}'.format(commit.parents[1],
+                                                           modification_info['old_path']))
+    except GitCommandError:
+        file_content_p2 = ''
 
     if is_binary_file(modification_info['new_path'], file_content) or \
        is_binary_file(modification_info['new_path'], file_content_p1) or \

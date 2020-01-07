@@ -47,6 +47,10 @@ def get_line_editing_paths(sqlite_db_file, repo_string, commit_hashes=None, file
     except sqlite3.OperationalError:
         raise Exception("You either provided no database or a database not created with git2net. " +
                         "Please provide a valid datatabase mined with 'use_blocks=False'.")
+    
+    if file_paths is not None:
+        assert type(file_paths) is list
+
     if merge_renaming:
         print('Searching for aliases')
         # Identify files that have been renamed.
@@ -98,8 +102,7 @@ def get_line_editing_paths(sqlite_db_file, repo_string, commit_hashes=None, file
 
         # Filter edits table if specific files are considered. Has to be done after renaming.
         if file_paths is not None:
-            file_paths_with_aliases = {x for fp in file_paths for x in aliases[fp]}
-            edits = edits.loc[[x in file_paths_with_aliases for x in edits.new_path], :]
+            edits = edits.loc[[x in file_paths for x in edits.new_path], :]
 
         # Get author and date of deletions.
         edits = pd.merge(edits, commits, how='left', left_on='original_commit_deletion',

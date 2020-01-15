@@ -17,7 +17,9 @@ This also installs the necessary dependencies. `git2net` depends on the `python-
 ## How to use git2net
 After installation, we suggest to check out our [tutorial](https://github.com/gotec/git2net/blob/master/TUTORIAL.ipynb), detailing how to get started using `git2net`. We also provide detailed inline documentation serving as reference.
 
-In addition, we have publised some motivating results as well as details on the mining algorithm in ["git2net - Mining Time-Stamped Co-Editing Networks from Large git Repositories"](https://arxiv.org/abs/1903.10180). Together with the paper, we have further released a jupyter notebook (using an early version of `git2net`) reproducing the majority of the results shown in the paper on [zenodo.org](https://zenodo.org/record/2587483#.XK4LPENoSCg).
+In addition, we have publised some motivating results as well as details on the mining algorithm in ["git2net - Mining Time-Stamped Co-Editing Networks from Large git Repositories"](https://dl.acm.org/doi/10.1109/MSR.2019.00070). Together with the paper, we have further released a jupyter notebook (using an early version of `git2net`) reproducing the majority of the results shown in the paper on [zenodo.org](https://zenodo.org/record/2587483#.XK4LPENoSCg).
+
+All functions of `git2net`have been tested on Ubuntu, Mac OS, and Windows. However, we have recently learned about issues running `git2net` on CentOS. Until these are fixed, we propose to use one of the operating systems listed above.
 
 ## How to cite git2net
 

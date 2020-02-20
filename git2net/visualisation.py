@@ -47,7 +47,7 @@ def get_line_editing_paths(sqlite_db_file, repo_string, commit_hashes=None, file
     except sqlite3.OperationalError:
         raise Exception("You either provided no database or a database not created with git2net. " +
                         "Please provide a valid datatabase mined with 'use_blocks=False'.")
-    
+
     if file_paths is not None:
         assert type(file_paths) is list
 

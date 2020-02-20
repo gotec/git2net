@@ -6,6 +6,7 @@ import numpy as np
 import lizard
 import os
 from datetime import datetime
+import sys
 
 @pytest.yield_fixture(scope="module")
 def repo_string():
@@ -47,7 +48,6 @@ def test_extract_edits_1(repo_string):
             df = git2net.extraction._extract_edits(git_repo, commit, mod, use_blocks=False,
                                                   blame_C='CCC4')
     assert len(df) == 3
-    print(df)
     assert df.at[0, 'original_commit_addition'] == 'e4448e87541d19d139b9d033b2578941a53d1f97'
     assert df.at[1, 'original_commit_addition'] == '6b531fcb57d5b9d98dd983cb65357d82ccca647b'
     assert df.at[2, 'original_commit_addition'] == 'e4448e87541d19d139b9d033b2578941a53d1f97'
@@ -91,7 +91,8 @@ def test_identify_edits(repo_string):
 def test_process_commit(repo_string):
     commit_hash = 'f343ed53ee64717f85135c4b8d3f6bd018be80ad'
     args = {'repo_string': repo_string, 'commit_hash': commit_hash, 'use_blocks': False,
-             'exclude_paths': [], 'blame_C': '-C'}
+             'exclude_paths': [], 'blame_C': '-C', 'timeout': 0, 'max_modifications': 0,
+             'no_of_processes': 4}
     res_dict = git2net.extraction._process_commit(args)
     assert list(res_dict.keys()) == ['commit', 'edits']
 
@@ -112,8 +113,8 @@ def test_mine_git_repo(repo_string, sqlite_db_file):
     assert True
 
 
-def test_get_line_editing_paths(sqlite_db_file):
-    paths, dag, node_info, edge_info = git2net.get_line_editing_paths(sqlite_db_file,
+def test_get_line_editing_paths(sqlite_db_file, repo_string):
+    paths, dag, node_info, edge_info = git2net.get_line_editing_paths(sqlite_db_file, repo_string,
                                                                       with_start=True)
     assert len(dag.isolate_nodes()) == 0
 
@@ -206,3 +207,24 @@ def test_get_bipartite_network(sqlite_db_file):
     ('Author B', 'text_file.txt', 1549965738)]
 
     assert len(set(t.tedges).difference(set(expected_edges))) == 0
+
+def test_process_commit_merge(repo_string):
+    commit_hash = 'dcf060d5aa93077c84552ce6ed56a0f0a37e4dca'
+    args = {'repo_string': repo_string, 'commit_hash': commit_hash, 'use_blocks': False,
+             'exclude_paths': [], 'blame_C': '-C', 'timeout': 0, 'max_modifications': 0,
+             'no_of_processes': 4}
+    res_dict = git2net.extraction._process_commit(args)
+
+    assert list(res_dict['edits']['edit_type']) == ['deletion']*7
+    assert list(res_dict['edits']['pre_starting_line_no']) == [6,7,8,12,13,1,2]
+
+
+def test_process_commit_merge2(repo_string):
+    commit_hash = '96025072a3e1b2f466ef56053bbdf4c9c0e927f0'
+    args = {'repo_string': repo_string, 'commit_hash': commit_hash, 'use_blocks': False,
+             'exclude_paths': [], 'blame_C': '-C', 'timeout': 0, 'max_modifications': 0,
+             'no_of_processes': 4}
+    res_dict = git2net.extraction._process_commit(args)
+
+    assert list(res_dict['edits']['edit_type']) == ['replacement']*6
+    assert list(res_dict['edits']['pre_starting_line_no']) == [1,2,3,1,2,3]

@@ -317,7 +317,7 @@ def _parse_porcelain_blame(blame):
 
 
 def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_parent,
-                      blame_info_commit, use_blocks=False):
+                      blame_info_commit, use_blocks=False, extract_text=False):
     """ Extracts detailed measures for a given edit.
 
     Args:
@@ -328,6 +328,7 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
         blame_info_parent: blame info for parent commit as output from _parse_porcelain_blame
         blame_info_commit: blame info for current commit as output from _parse_porcelain_blame
         use_blocks: bool indicating whether or not to use the block approach
+        extract_text: extract the commit message and line texts
 
     Returns:
         e: pandas dataframe containing information on edits
@@ -363,6 +364,9 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
         e['post_entropy'] = text_entropy(added_block)
 
         # Levenshtein edit distance between deleted and added block.
+        if extract_text:
+            e['pre_text'] = deleted_block
+            e['post_text'] = added_block
         e['levenshtein_dist'] = lev_dist(deleted_block, added_block)
 
         # Data on origin of deleted line. Every deleted line must have an origin
@@ -425,6 +429,9 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
         e['original_file_path_addition'] = None
 
         # Levenshtein edit distance is set to 'None'. Theoretically 1 keystroke required.
+        if extract_text:
+            e['pre_text'] = deleted_block
+            e['post_text'] = None
         e['levenshtein_dist'] = None
 
         # Data on origin of deleted line. Every deleted line must have an origin.
@@ -466,6 +473,9 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
         e['post_entropy'] = text_entropy(added_block)
 
         # Levenshtein edit distance is length of added block as nothing existed before.
+        if extract_text:
+            e['pre_text'] = None
+            e['post_text'] = added_block
         e['levenshtein_dist'] = len(added_block)
 
         # If the lines were newly added to this file, they might still come from another file.
@@ -516,6 +526,9 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
             e['original_file_path_addition'] = None
 
         # Levenshtein edit distance set to 0 to distinguish from deletion
+        if extract_text:
+            e['pre_text'] = None
+            e['post_text'] = None
         e['levenshtein_dist'] = 0
 
     else:
@@ -546,7 +559,7 @@ def is_binary_file(filename, file_content):
 
 
 def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C',
-                   no_of_processes=os.cpu_count()):
+                   no_of_processes=os.cpu_count(), extract_text=False):
     """ Returns dataframe with metadata on edits made in a given modification.
 
     Args:
@@ -556,6 +569,7 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
         use_blocks: bool, determins if analysis is performed on block or line basis
         blame_C: git blame '-C' option. By default, '-C' is used.
         no_of_processes: number of parallel processes that are spawned
+        extract_text: extract the commit message and line texts
 
     Returns:
         edits_info: pandas DataFrame object containing metadata on all edits in given modification
@@ -667,7 +681,8 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
             e['edit_type'] = edit.type
 
             e.update(_get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_parent,
-                                      blame_info_commit, use_blocks=use_blocks))
+                                      blame_info_commit, use_blocks=use_blocks,
+                                      extract_text=extract_text))
 
             l.append(e)
 
@@ -676,7 +691,7 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
 
 
 def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, blame_C='-C',
-                         no_of_processes=os.cpu_count()):
+                         no_of_processes=os.cpu_count(), extract_text=False):
     """ Returns dataframe with metadata on edits made in a given modification for merge commits.
 
     Args:
@@ -686,6 +701,7 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
         use_blocks: bool, determins if analysis is performed on block or line basis
         blame_C: git blame '-C' option. By default, '-C' is used.
         no_of_processes: number of parallel processes that are spawned
+        extract_text: extract the commit message and line texts
 
     Returns:
         edits_info: pandas DataFrame object containing metadata on all edits in given modification
@@ -737,7 +753,8 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
             e.update(modification_info)
 
             e.update(_get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_parent,
-                                          blame_info_commit, use_blocks=use_blocks))
+                                          blame_info_commit, use_blocks=use_blocks,
+                                          extract_text=extract_text))
 
 
 
@@ -861,7 +878,8 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
             e['edit_type'] = edit.type
             e.update(modification_info)
             e.update(_get_edit_details(edit, commit, deleted_lines_parents[idx], added_lines,
-                                       parent_blames[idx], current_blame, use_blocks=use_blocks))
+                                       parent_blames[idx], current_blame, use_blocks=use_blocks,
+                                       extract_text=extract_text))
 
             edits_info.append(e)
 
@@ -972,6 +990,7 @@ def _process_commit(args):
                   blame_C: string for the blame C option
                   max_modifications: ignore commit if there are more modifications
                   timeout: stop processing commit after given time in seconds
+                  extract_text: extract the commit message and line texts
 
     Returns:
         extracted_result: dict containing two dataframes with information of commit and edits
@@ -994,7 +1013,9 @@ def _process_commit(args):
         c['committer_date'] = commit.committer_date.strftime('%Y-%m-%d %H:%M:%S')
         c['committer_timezone'] = commit.committer_timezone
         c['no_of_modifications'] = len(commit.modifications)
-        c['msg_len'] = len(commit.msg)
+        c['commit_message_len'] = len(commit.msg)
+        if args['extract_text']:
+            c['commit_message'] = commit.msg
         c['project_name'] = commit.project_name
         c['parents'] = ','.join(commit.parents)
         c['merge'] = commit.merge
@@ -1045,7 +1066,8 @@ def _process_commit(args):
                                                         modification_info,
                                                         use_blocks=args['use_blocks'],
                                                         blame_C=args['blame_C'],
-                                                        no_of_processes=args['no_of_processes']),
+                                                        no_of_processes=args['no_of_processes'],
+                                                        extract_text=args['extract_text']),
                                                 ignore_index=True, sort=True)
                     except GitCommandError:
                         # A GitCommandError occurs if the file was deleted. In this case it
@@ -1068,7 +1090,8 @@ def _process_commit(args):
                                                         modification_info,
                                                         use_blocks=args['use_blocks'],
                                                         blame_C=args['blame_C'],
-                                                        no_of_processes=args['no_of_processes']),
+                                                        no_of_processes=args['no_of_processes'],
+                                                        extract_text=args['extract_text']),
                                                     ignore_index=True, sort=True)
 
         else:
@@ -1094,7 +1117,8 @@ def _process_commit(args):
                     df_edits = df_edits.append(_extract_edits(git_repo, commit, modification,
                                                         use_blocks=args['use_blocks'],
                                                         blame_C=args['blame_C'],
-                                                        no_of_processes=args['no_of_processes']),
+                                                        no_of_processes=args['no_of_processes'],
+                                                        extract_text=args['extract_text']),
                                             ignore_index=True, sort=True)
 
 
@@ -1112,7 +1136,7 @@ def _process_commit(args):
 
 def _process_repo_serial(repo_string, sqlite_db_file, commits, use_blocks=False,
                          no_of_processes=os.cpu_count(), exclude=None, blame_C='-C',
-                         max_modifications=0, timeout=0):
+                         max_modifications=0, timeout=0, extract_text=False):
     """ Processes all commits in a given git repository in a serial manner.
 
     Args:
@@ -1125,6 +1149,7 @@ def _process_repo_serial(repo_string, sqlite_db_file, commits, use_blocks=False,
         blame_C: string for the blame C option
         max_modifications: ignore commit if there are more modifications
         timeout: stop processing commit after given time in seconds
+        extract_text: extract the commit message and line texts
 
     Returns:
         sqlite database will be written at specified location
@@ -1145,7 +1170,7 @@ def _process_repo_serial(repo_string, sqlite_db_file, commits, use_blocks=False,
         args = {'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
                 'exclude_paths': exclude_paths, 'blame_C': blame_C,
                 'no_of_processes': no_of_processes, 'max_modifications': max_modifications,
-                'timeout': timeout}
+                'timeout': timeout, 'extract_text': extract_text}
         result = _process_commit(args)
 
         if not result['commit'].empty:
@@ -1156,7 +1181,7 @@ def _process_repo_serial(repo_string, sqlite_db_file, commits, use_blocks=False,
 
 def _process_repo_parallel(repo_string, sqlite_db_file, commits, use_blocks=False,
                           no_of_processes=os.cpu_count(), chunksize=1, exclude=None, blame_C='-C',
-                          max_modifications=0, timeout=0):
+                          max_modifications=0, timeout=0, extract_text=False):
     """ Processes all commits in a given git repository in a parallel manner.
 
     Args:
@@ -1170,6 +1195,7 @@ def _process_repo_parallel(repo_string, sqlite_db_file, commits, use_blocks=Fals
         blame_C: string for the blame C option
         max_modifications: ignore commit if there are more modifications
         timeout: stop processing commit after given time in seconds
+        extract_text: extract the commit message and line texts
 
     Returns:
         sqlite database will be written at specified location
@@ -1182,7 +1208,8 @@ def _process_repo_parallel(repo_string, sqlite_db_file, commits, use_blocks=Fals
 
     args = [{'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
              'exclude_paths': exclude_paths, 'blame_C': blame_C, 'no_of_processes': no_of_processes,
-             'max_modifications': max_modifications, 'timeout': timeout}
+             'max_modifications': max_modifications, 'timeout': timeout,
+             'extract_text': extract_text}
             for commit in commits]
 
     con = sqlite3.connect(sqlite_db_file)
@@ -1417,7 +1444,7 @@ def mining_state_summary(repo_string, sqlite_db_file):
 
 def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
                   no_of_processes=os.cpu_count(), chunksize=1, exclude=[], blame_C='-C',
-                  max_modifications=0, timeout=0, commits=None):
+                  max_modifications=0, timeout=0, commits=None, extract_text=False):
     """ Creates sqlite database with details on commits and edits for a given git repository.
 
     Args:
@@ -1431,6 +1458,7 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
         max_modifications: ignore commit if there are more modifications
         timeout: stop processing commit after given time in seconds
         commits: only consider specific set of commits
+        extract_text: extract the commit message and line texts
 
     Returns:
         sqlite database will be written at specified location
@@ -1439,11 +1467,16 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
     if os.path.exists(sqlite_db_file):
         try:
             with sqlite3.connect(sqlite_db_file) as con:
-                prev_method, prev_repository = con.execute("""SELECT method, repository
+                prev_method, prev_repository, prev_extract_text = con.execute(
+                                                           """SELECT
+                                                                  method,
+                                                                  repository,
+                                                                  extract_text
                                                               FROM _metadata""").fetchall()[0]
 
                 if (prev_method == 'blocks' if use_blocks else 'lines') and \
-                   (prev_repository == repo_string):
+                   (prev_repository == repo_string) and \
+                    (bool(prev_extract_text) == extract_text):
                     try:
                         p_commits = set(x[0]
                             for x in con.execute("SELECT hash FROM commits").fetchall())
@@ -1480,19 +1513,23 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
             con.execute("""CREATE TABLE _metadata ('created with',
                                                    'repository',
                                                    'date',
-                                                   'method')""")
+                                                   'method',
+                                                   'extract_text')""")
             con.execute("""INSERT INTO _metadata ('created with',
                                                   'repository',
                                                   'date',
-                                                  'method')
+                                                  'method',
+                                                  'extract_text')
                         VALUES (:version,
                                 :repository,
                                 :date,
-                                :method)""",
+                                :method,
+                                :extract_text)""",
                         {'version': 'git2net ' + str(__version__),
                          'repository': repo_string,
                          'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                         'method': 'blocks' if use_blocks else 'lines'})
+                         'method': 'blocks' if use_blocks else 'lines',
+                         'extract_text': str(extract_text)})
             con.commit()
             p_commits = []
 
@@ -1511,9 +1548,11 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
                                commits=u_commits, use_blocks=use_blocks,
                                no_of_processes=no_of_processes, chunksize=chunksize,
                                exclude=exclude, blame_C=blame_C,
-                               max_modifications=max_modifications, timeout=timeout)
+                               max_modifications=max_modifications, timeout=timeout,
+                               extract_text=extract_text)
     else:
         _process_repo_serial(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
                              commits=u_commits, use_blocks=use_blocks,
                              no_of_processes=no_of_processes, exclude=exclude,
-                             blame_C=blame_C, max_modifications=max_modifications, timeout=timeout)
+                             blame_C=blame_C, max_modifications=max_modifications, timeout=timeout,
+                             extract_text=extract_text)

@@ -52,7 +52,9 @@ if __name__ == "__main__":
         'number of modifications. Use 0 to disable.', dest='max_modifications', default=0, type=int)
     mine.add_argument('--timeout', help='Stop processing commit after timeout. Use 0 to disable.',
         default=0, type=int, dest='timeout')
-
+    mine.add_argument('--extract-text',
+        help='Extract the commit message and line texts.', dest='extract_text',
+        action='store_true', default=False)
 
     # "graph" options
     subparsers_graph = graph.add_subparsers(dest='projection',
@@ -104,7 +106,8 @@ if __name__ == "__main__":
         mine_git_repo(args.repo, args.database, use_blocks=args.use_blocks,
                       no_of_processes=args.numprocesses, chunksize=args.chunksize,
                       exclude=args.exclude, blame_C=args.blame_C,
-                      max_modifications=args.max_modifications, timeout=args.timeout)
+                      max_modifications=args.max_modifications, timeout=args.timeout,
+                      extract_text=args.extract_text)
     elif args.command == 'graph':
         if args.projection == 'commit_editing':
             _, d, _, _ = get_commit_editing_paths(args.database, filename=args.filename,

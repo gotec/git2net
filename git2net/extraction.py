@@ -543,7 +543,7 @@ def is_binary_file(filename, file_content):
         return False
     else:
         try:
-            extension = re.search('.*\.([^\.]+)$', filename).groups()[0]
+            extension = re.search(r'.*\.([^\.]+)$', filename).groups()[0]
         except AttributeError:
             extension = None
 
@@ -580,7 +580,7 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
 
     if not binary_file:
         try:
-            old_path, new_path = re.search('Binary files a?\/(.*) and b?\/(.*) differ',
+            old_path, new_path = re.search(r'Binary files a?\/(.*) and b?\/(.*) differ',
                                             modification.diff.strip()).groups()
 
             if old_path == 'dev/null':

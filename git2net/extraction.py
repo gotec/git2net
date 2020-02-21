@@ -1453,7 +1453,7 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
 
                 if (prev_method == 'blocks' if use_blocks else 'lines') and \
                    (prev_repository == repo_string) and \
-                    (bool(prev_extract_text) == extract_text):
+                   (prev_extract_text == str(extract_text)):
                     try:
                         p_commits = set(x[0]
                             for x in con.execute("SELECT hash FROM commits").fetchall())

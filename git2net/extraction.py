@@ -580,7 +580,8 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
 
     if not binary_file:
         try:
-            old_path, new_path = re.search('Binary files a?\/(.*) and b?\/(.*) differ', modification.diff.strip()).groups()
+            old_path, new_path = re.search('Binary files a?\/(.*) and b?\/(.*) differ',
+                                            modification.diff.strip()).groups()
 
             if old_path == 'dev/null':
                 old_path = None
@@ -768,7 +769,11 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
                                                   _parse_blame_C(blame_C) +
                                                         ['-w', '--show-number', '--porcelain'],
                                                   modification_info['old_path'])
-                if len(parent_blame) > 0:
+
+                # The second case resolves an issue with CentOS, where git blame returns a header
+                # rather than an empty blame for empty files.
+                if (len(parent_blame) > 0) and \
+                   (int(parent_blame.split('\n')[0].split(' ')[-1]) > 0):
                     parent_blame = _parse_porcelain_blame(parent_blame).rename(
                                     columns={'line_content': 'pre_line_content',
                                             'line_number': 'pre_line_number'})
@@ -795,9 +800,12 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
                                            _parse_blame_C(blame_C) +
                                                 ['-w', '--show-number', '--porcelain'],
                                            modification_info['new_path'])
-        if len(current_blame) > 0:
+
+    # The second case resolves an issue with CentOS, where git blame returns a header rather
+        # than an empty blame for empty files.
+        if (len(current_blame) > 0) and (int(current_blame.split('\n')[0].split(' ')[-1]) > 0):
             current_blame = _parse_porcelain_blame(current_blame).rename(
-                                                        columns={'line_content': 'post_line_content',
+                                                       columns={'line_content': 'post_line_content',
                                                                 'line_number': 'post_line_number'})
         else:
             current_blame = pd.DataFrame({'original_commit_hash': [],
@@ -1054,7 +1062,8 @@ def _process_commit(args):
                             modification_info['cyclomatic_complexity_of_file'] = None
                             modification_info['lines_of_code_in_file'] = None
                         else:
-                            l = lizard.analyze_file.analyze_source_code(edited_file_path, file_content)
+                            l = lizard.analyze_file.analyze_source_code(edited_file_path,
+                                                                        file_content)
                             modification_info['cyclomatic_complexity_of_file'] = l.CCN
                             modification_info['lines_of_code_in_file'] = l.nloc
                         modification_info['filename'] = edited_file_path.split(os.sep)[-1]
@@ -1262,38 +1271,6 @@ def identify_file_renaming(repo_string):
     dag.make_acyclic()
     nodes = [k for k, v in dag.nodes.items() if v['indegree'] == 0 and not v['outdegree'] == 0]
     aliases = {z: y[-1] for x in nodes for y in dag.routes_from_node(x) for z in y[:-1]}
-
-    # def _get_path_to_leaf_node(dag, node, _path=[]):
-    #     """ For a given node and dag returns path to leaf node with leaf.
-
-    #     Args:
-    #         dag: pathpy DAG object
-    #         node: node for which path is computed
-    #         _path=[]: subpath used for recursion
-
-    #     Returns:
-    #         path: path from the current node to a leaf node in the dag
-
-    #     """
-    #     successors = dag.successors[node].difference(set(_path))
-
-    #     if len(successors) > 0:
-    #         return _get_path_to_leaf_node(dag, list(dag.successors[node])[0], _path=[node] + _path)
-    #     else:
-    #         path = [node] + _path
-    #         return path
-
-    # renamings = []
-    # for node in dag.nodes:
-    #     if 'added file' in dag.predecessors[node]:
-    #         renamings.append(_get_path_to_leaf_node(dag, node))
-
-    # aliases = {}
-    # for renaming in renamings:
-    #     if 'deleted file' in renaming:
-    #         renaming.remove('deleted file')
-    #     for alias in renaming:
-    #         aliases[alias] = renaming
 
     return dag, aliases
 

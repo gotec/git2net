@@ -6,6 +6,7 @@
 
 import sqlite3
 import os
+from subprocess import check_output
 
 import multiprocessing
 
@@ -770,10 +771,7 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
                                                         ['-w', '--show-number', '--porcelain'],
                                                   modification_info['old_path'])
 
-                # The second case resolves an issue with CentOS, where git blame returns a header
-                # rather than an empty blame for empty files.
-                if (len(parent_blame) > 0) and \
-                   (int(parent_blame.split('\n')[0].split(' ')[-1]) > 0):
+                if len(parent_blame) > 0:
                     parent_blame = _parse_porcelain_blame(parent_blame).rename(
                                     columns={'line_content': 'pre_line_content',
                                             'line_number': 'pre_line_number'})
@@ -801,9 +799,7 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
                                                 ['-w', '--show-number', '--porcelain'],
                                            modification_info['new_path'])
 
-    # The second case resolves an issue with CentOS, where git blame returns a header rather
-        # than an empty blame for empty files.
-        if (len(current_blame) > 0) and (int(current_blame.split('\n')[0].split(' ')[-1]) > 0):
+        if len(current_blame) > 0:
             current_blame = _parse_porcelain_blame(current_blame).rename(
                                                        columns={'line_content': 'post_line_content',
                                                                 'line_number': 'post_line_number'})
@@ -1440,6 +1436,12 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
     Returns:
         sqlite database will be written at specified location
     """
+    git_version = check_output(['git', '--version']).strip().split()[-1].decode("utf-8")
+
+    if int(re.search(r'(\d+)(?:\.\d+[a-z]*)+', git_version).groups()[0]) < 2:
+        raise Exception("Your system is using git " + git_version + " which is not supported by " +
+                        "git2net. Please update to git >= 2.0.")
+
     git_repo = pydriller.GitRepository(repo_string)
     if os.path.exists(sqlite_db_file):
         try:

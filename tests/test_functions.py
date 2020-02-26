@@ -137,8 +137,6 @@ def test_get_commit_editing_paths_2(sqlite_db_file):
                                                                         time_from=time_from,
                                                                         time_to=time_to)
 
-    print(dag)
-
     assert len(dag.isolate_nodes()) == 0
     assert len(dag.nodes) == 15
     assert len(dag.successors[None]) == 6
@@ -153,8 +151,6 @@ def test_get_commit_editing_paths_3(sqlite_db_file):
                                                                         time_from=time_from,
                                                                         time_to=time_to,
                                                                         filename=filename)
-
-    print(dag)
 
     assert len(dag.isolate_nodes()) == 0
     assert len(dag.nodes) == 17

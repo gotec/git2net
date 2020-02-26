@@ -130,12 +130,14 @@ def test_get_commit_editing_paths_1(sqlite_db_file):
 
 
 def test_get_commit_editing_paths_2(sqlite_db_file):
-    time_from = datetime(2019, 2, 12, 10, 0, 0)
-    time_to = datetime(2019, 2, 12, 11, 0, 0)
+    time_from = datetime(2019, 2, 12, 12, 0, 0)
+    time_to = datetime(2019, 2, 12, 13, 0, 0)
 
     paths, dag, node_info, edge_info = git2net.get_commit_editing_paths(sqlite_db_file,
                                                                         time_from=time_from,
                                                                         time_to=time_to)
+
+    print(dag)
 
     assert len(dag.isolate_nodes()) == 0
     assert len(dag.nodes) == 15
@@ -143,8 +145,8 @@ def test_get_commit_editing_paths_2(sqlite_db_file):
 
 
 def test_get_commit_editing_paths_3(sqlite_db_file):
-    time_from = datetime(2019, 2, 12, 11, 0, 0)
-    time_to = datetime(2019, 2, 12, 12, 0, 0)
+    time_from = datetime(2019, 2, 12, 13, 0, 0)
+    time_to = datetime(2019, 2, 12, 14, 0, 0)
     filename = 'text_file.txt'
 
     paths, dag, node_info, edge_info = git2net.get_commit_editing_paths(sqlite_db_file,
@@ -152,13 +154,15 @@ def test_get_commit_editing_paths_3(sqlite_db_file):
                                                                         time_to=time_to,
                                                                         filename=filename)
 
+    print(dag)
+
     assert len(dag.isolate_nodes()) == 0
     assert len(dag.nodes) == 17
     assert len(dag.successors[None]) == 1
 
 
 def test_get_coediting_network(sqlite_db_file):
-    time_from = datetime(2019, 2, 12, 11, 00, 0)
+    time_from = datetime(2019, 2, 12, 11, 0, 0)
     time_to = datetime(2019, 2, 12, 11, 15, 0)
 
     t, node_info, edge_info = git2net.get_coediting_network(sqlite_db_file, time_from=time_from,
@@ -180,8 +184,8 @@ def test_get_coediting_network(sqlite_db_file):
 
 
 def test_get_coauthorship_network(sqlite_db_file):
-    time_from = datetime(2019, 2, 12, 11, 00, 0)
-    time_to = datetime(2019, 2, 12, 11, 15, 0)
+    time_from = datetime(2019, 2, 12, 12, 0, 0)
+    time_to = datetime(2019, 2, 12, 12, 15, 0)
 
     n, node_info, edge_info = git2net.get_coauthorship_network(sqlite_db_file, time_from=time_from,
                                                                time_to=time_to)
@@ -194,7 +198,7 @@ def test_get_coauthorship_network(sqlite_db_file):
 
 
 def test_get_bipartite_network(sqlite_db_file):
-    time_from = datetime(2019, 2, 12, 11, 00, 0)
+    time_from = datetime(2019, 2, 12, 11, 0, 0)
     time_to = datetime(2019, 2, 12, 11, 10, 0)
 
     t, node_info, edge_info = git2net.get_bipartite_network(sqlite_db_file, time_from=time_from,

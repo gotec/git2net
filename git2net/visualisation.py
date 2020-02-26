@@ -12,6 +12,8 @@ import sqlite3
 import datetime
 from tqdm import tqdm
 import math
+import time
+import numpy as np
 
 def get_line_editing_paths(sqlite_db_file, repo_string, commit_hashes=None, file_paths=None,
                            with_start=False, merge_renaming=False):
@@ -272,25 +274,34 @@ def get_commit_editing_paths(sqlite_db_file, time_from=None, time_to=None, filen
     data = pd.read_sql("""SELECT edits.original_commit_deletion AS pre_commit,
                                  edits.commit_hash AS post_commit,
                                  edits.filename,
-                                 commits.author_date AS time
+                                 commits.author_date AS time,
+                                 commits.author_timezone as timezone
                           FROM edits
                           JOIN commits
                           ON edits.commit_hash = commits.hash""", con).drop_duplicates()
     if filename is not None:
         data = data.loc[data.filename==filename, :]
 
+    data['time'] = (pd.to_datetime(data.time, format='%Y-%m-%d %H:%M:%S').values.astype(int)/1e9 - \
+                    data.timezone).astype(int)
+
+    data = data.drop(['timezone'], axis=1)
+
     if time_from == None:
-        time_from = datetime.datetime.strptime(min(data.time), '%Y-%m-%d %H:%M:%S')
+        time_from = min(data.time)
+    else:
+        time_from = int(time.mktime(time_from.timetuple()))
     if time_to == None:
-        time_to = datetime.datetime.strptime(max(data.time), '%Y-%m-%d %H:%M:%S')
+        time_to = max(data.time)
+    else:
+        time_to = int(time.mktime(time_to.timetuple()))
 
     node_info = {}
     edge_info = {}
 
     dag = pp.DAG()
     for idx, row in data.iterrows():
-        if (datetime.datetime.strptime(row.time, '%Y-%m-%d %H:%M:%S') >= time_from) and \
-           (datetime.datetime.strptime(row.time, '%Y-%m-%d %H:%M:%S') <= time_to):
+        if (row.time >= time_from) and (row.time <= time_to):
             dag.add_edge(row.pre_commit, row.post_commit)
 
     dag.topsort()
@@ -324,35 +335,43 @@ def get_coediting_network(db_location, time_from=None, time_to=None):
                                   commit_hash AS post_commit,
                                   levenshtein_dist
                            FROM edits""", con).drop_duplicates()
-    commits = pd.read_sql("""SELECT hash, author_name, author_date FROM commits""", con)
+    commits = pd.read_sql("""SELECT hash, author_name, author_date, author_timezone
+                             FROM commits""", con)
 
     data = pd.merge(edits, commits, how='left', left_on='pre_commit', right_on='hash') \
-                    .drop(['pre_commit', 'hash', 'author_date'], axis=1)
+                    .drop(['pre_commit', 'hash', 'author_date', 'author_timezone'], axis=1)
+
     data.columns = ['post_commit', 'levenshtein_dist', 'pre_author']
     data = pd.merge(data, commits, how='left', left_on='post_commit', right_on='hash') \
                     .drop(['post_commit', 'hash'], axis=1)
-    data.columns = ['levenshtein_dist', 'pre_author', 'post_author', 'time']
+    data.columns = ['levenshtein_dist', 'pre_author', 'post_author', 'time', 'timezone']
+
+    data['time'] = (pd.to_datetime(data.time, format='%Y-%m-%d %H:%M:%S').values.astype(int)/1e9 - \
+                    data.timezone).astype(int)
+
     data = data[['pre_author', 'post_author', 'time', 'levenshtein_dist']]
 
     if time_from == None:
-        time_from = datetime.datetime.strptime(min(data.time), '%Y-%m-%d %H:%M:%S')
+        time_from = min(data.time)
+    else:
+        time_from = int(time.mktime(time_from.timetuple()))
     if time_to == None:
-        time_to = datetime.datetime.strptime(max(data.time), '%Y-%m-%d %H:%M:%S')
+        time_to = max(data.time)
+    else:
+        time_to = int(time.mktime(time_to.timetuple()))
 
     node_info = {}
     edge_info = {}
 
     t = pp.TemporalNetwork()
     for idx, row in data.iterrows():
-        if (datetime.datetime.strptime(row.time, '%Y-%m-%d %H:%M:%S') >= time_from) and \
-           (datetime.datetime.strptime(row.time, '%Y-%m-%d %H:%M:%S') <= time_to) and not \
+        if (row.time >= time_from) and (row.time <= time_to) and not \
            (row['post_author'] == row['pre_author']):
             if not (pd.isnull(row['post_author']) or pd.isnull(row['pre_author'])):
                 t.add_edge(row['post_author'],
                            row['pre_author'],
                            row['time'],
-                           directed=True,
-                           timestamp_format='%Y-%m-%d %H:%M:%S')
+                           directed=True)
 
     return t, node_info, edge_info
 
@@ -379,7 +398,9 @@ def get_coauthorship_network(sqlite_db_file, time_from=None, time_to=None):
                                   commit_hash AS post_commit,
                                   filename
                            FROM edits""", con)
-    commits = pd.read_sql("""SELECT hash, author_name, author_date AS time FROM commits""", con)
+    commits = pd.read_sql("""SELECT hash, author_name, author_date AS time,
+                                    author_timezone AS timezone
+                             FROM commits""", con)
 
     data_pre = pd.merge(edits, commits, how='left', left_on='pre_commit', right_on='hash') \
                     .drop(['pre_commit', 'post_commit', 'hash'], axis=1)
@@ -387,14 +408,23 @@ def get_coauthorship_network(sqlite_db_file, time_from=None, time_to=None):
                     .drop(['pre_commit', 'post_commit', 'hash'], axis=1)
     data = pd.concat([data_pre, data_post])
 
-    all_times = [datetime.datetime.strptime(dt, '%Y-%m-%d %H:%M:%S') for dt in data.time if not pd.isnull(dt)]
+    data['time'] = [int(time.mktime(datetime.datetime.strptime(t, '%Y-%m-%d %H:%M:%S').timetuple())
+                    -tz) if not pd.isnull(t) else np.nan
+                    for t, tz in zip(data.time,data.timezone)]
+    data = data.drop(['timezone'], axis=1)
+
+    all_times = [dt for dt in data.time if not pd.isnull(dt)]
     if time_from == None:
         time_from = min(all_times)
+    else:
+        time_from = int(time.mktime(time_from.timetuple()))
     if time_to == None:
         time_to = max(all_times)
+    else:
+        time_to = int(time.mktime(time_to.timetuple()))
 
-    data = data.loc[pd.to_datetime(data['time']) >= time_from, :]
-    data = data.loc[pd.to_datetime(data['time']) <= time_to, :]
+    data = data.loc[data['time'] >= time_from, :]
+    data = data.loc[data['time'] <= time_to, :]
 
     node_info = {}
     edge_info = {}
@@ -433,16 +463,27 @@ def get_bipartite_network(sqlite_db_file, time_from=None, time_to=None):
                                   filename
                            FROM edits""", con).drop_duplicates()
 
-    commits = pd.read_sql("""SELECT hash, author_name, author_date AS time FROM commits""", con)
+    commits = pd.read_sql("""SELECT hash, author_name, author_date AS time,
+                                    author_timezone as timezone
+                             FROM commits""", con)
 
     data = pd.merge(edits, commits, how='left', left_on='post_commit', right_on='hash') \
                         .drop(['post_commit', 'hash'], axis=1)
 
-    all_times = [datetime.datetime.strptime(dt, '%Y-%m-%d %H:%M:%S') for dt in data.time if not pd.isnull(dt)]
+    data['time'] = [int(time.mktime(datetime.datetime.strptime(t, '%Y-%m-%d %H:%M:%S').timetuple())
+                    -tz) if not pd.isnull(t) else np.nan
+                    for t, tz in zip(data.time,data.timezone)]
+    data = data.drop(['timezone'], axis=1)
+
+    all_times = [dt for dt in data.time if not pd.isnull(dt)]
     if time_from == None:
         time_from = min(all_times)
+    else:
+        time_from = int(time.mktime(time_from.timetuple()))
     if time_to == None:
         time_to = max(all_times)
+    else:
+        time_to = int(time.mktime(time_to.timetuple()))
 
     node_info = {}
     edge_info = {}
@@ -450,10 +491,8 @@ def get_bipartite_network(sqlite_db_file, time_from=None, time_to=None):
     node_info['class'] = {}
     t = pp.TemporalNetwork()
     for idx, row in data.iterrows():
-        if (datetime.datetime.strptime(row.time, '%Y-%m-%d %H:%M:%S') >= time_from) and \
-           (datetime.datetime.strptime(row.time, '%Y-%m-%d %H:%M:%S') <= time_to):
-            t.add_edge(row['author_name'], row['filename'], row['time'], directed=True,
-                            timestamp_format='%Y-%m-%d %H:%M:%S')
+        if (row.time >= time_from) and (row.time <= time_to):
+            t.add_edge(row['author_name'], row['filename'], row['time'], directed=True)
             node_info['class'][row['author_name']] = 'author'
             node_info['class'][row['filename']] = 'file'
 

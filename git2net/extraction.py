@@ -1015,6 +1015,7 @@ def _process_commit(args):
         c['committer_name'] = commit.committer.name
         c['author_date'] = commit.author_date.strftime('%Y-%m-%d %H:%M:%S')
         c['committer_date'] = commit.committer_date.strftime('%Y-%m-%d %H:%M:%S')
+        c['author_timezone'] = commit.author_timezone
         c['committer_timezone'] = commit.committer_timezone
         c['no_of_modifications'] = len(commit.modifications)
         c['commit_message_len'] = len(commit.msg)

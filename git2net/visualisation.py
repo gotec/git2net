@@ -12,8 +12,8 @@ import sqlite3
 import datetime
 from tqdm import tqdm
 import math
-import time
 import numpy as np
+import calendar
 
 def get_line_editing_paths(sqlite_db_file, repo_string, commit_hashes=None, file_paths=None,
                            with_start=False, merge_renaming=False):
@@ -172,25 +172,6 @@ def get_line_editing_paths(sqlite_db_file, repo_string, commit_hashes=None, file
                     edge_info['weights'][(source_deletion, target)] = edit.levenshtein_dist
                     node_info['time'][target] = edit.author_date
                     node_info['time'][source_deletion] = edit.author_date_deletion
-                # else:
-                #     print(edit)
-                #     copied_from = 'L' + str(int(edit.original_line_no_deletion)) + ' ' + \
-                #                     edit.original_file_path_deletion + ' ' + \
-                #                     edit.original_commit_deletion
-
-                #     copied_to = 'L' + str(int(edit.post_starting_line_no)) + ' ' + \
-                #         edit.new_path + ' ' + \
-                #         edit.commit_hash
-
-                #     #found_copied_to = False
-                #     #for copied_to in dag.successors[copied_from]:
-                #     #    if copied_to.split(' ')[1] == edit.old_path:
-                #     #        found_copied_to = True
-                #     #        break
-                #     #assert found_copied_to
-                #     dag.add_edge(copied_to, 'deleted ' + copied_to)
-                #     edge_info['colors'][(copied_to, 'deleted ' + copied_to)] = 'white'
-                #     edge_info['weights'][(copied_to, 'deleted ' + copied_to)] = edit.levenshtein_dist
             elif edit.edit_type == 'addition':
                 # Generate name of target node.
                 target = 'L' + str(int(float(edit.post_starting_line_no))) + ' ' + \
@@ -290,11 +271,11 @@ def get_commit_editing_paths(sqlite_db_file, time_from=None, time_to=None, filen
     if time_from == None:
         time_from = min(data.time)
     else:
-        time_from = int(time.mktime(time_from.timetuple()))
+        time_from = int(calendar.timegm(time_from.timetuple()))
     if time_to == None:
         time_to = max(data.time)
     else:
-        time_to = int(time.mktime(time_to.timetuple()))
+        time_to = int(calendar.timegm(time_to.timetuple()))
 
     node_info = {}
     edge_info = {}
@@ -354,11 +335,11 @@ def get_coediting_network(db_location, time_from=None, time_to=None):
     if time_from == None:
         time_from = min(data.time)
     else:
-        time_from = int(time.mktime(time_from.timetuple()))
+        time_from = int(calendar.timegm(time_from.timetuple()))
     if time_to == None:
         time_to = max(data.time)
     else:
-        time_to = int(time.mktime(time_to.timetuple()))
+        time_to = int(calendar.timegm(time_to.timetuple()))
 
     node_info = {}
     edge_info = {}
@@ -408,7 +389,8 @@ def get_coauthorship_network(sqlite_db_file, time_from=None, time_to=None):
                     .drop(['pre_commit', 'post_commit', 'hash'], axis=1)
     data = pd.concat([data_pre, data_post])
 
-    data['time'] = [int(time.mktime(datetime.datetime.strptime(t, '%Y-%m-%d %H:%M:%S').timetuple())
+    data['time'] = [int(calendar.timegm(datetime.datetime.strptime(t,
+                                                                '%Y-%m-%d %H:%M:%S').timetuple())
                     -tz) if not pd.isnull(t) else np.nan
                     for t, tz in zip(data.time,data.timezone)]
     data = data.drop(['timezone'], axis=1)
@@ -417,11 +399,11 @@ def get_coauthorship_network(sqlite_db_file, time_from=None, time_to=None):
     if time_from == None:
         time_from = min(all_times)
     else:
-        time_from = int(time.mktime(time_from.timetuple()))
+        time_from = int(calendar.timegm(time_from.timetuple()))
     if time_to == None:
         time_to = max(all_times)
     else:
-        time_to = int(time.mktime(time_to.timetuple()))
+        time_to = int(calendar.timegm(time_to.timetuple()))
 
     data = data.loc[data['time'] >= time_from, :]
     data = data.loc[data['time'] <= time_to, :]
@@ -470,7 +452,8 @@ def get_bipartite_network(sqlite_db_file, time_from=None, time_to=None):
     data = pd.merge(edits, commits, how='left', left_on='post_commit', right_on='hash') \
                         .drop(['post_commit', 'hash'], axis=1)
 
-    data['time'] = [int(time.mktime(datetime.datetime.strptime(t, '%Y-%m-%d %H:%M:%S').timetuple())
+    data['time'] = [int(calendar.timegm(datetime.datetime.strptime(t,
+                                                                '%Y-%m-%d %H:%M:%S').timetuple())
                     -tz) if not pd.isnull(t) else np.nan
                     for t, tz in zip(data.time,data.timezone)]
     data = data.drop(['timezone'], axis=1)
@@ -479,11 +462,11 @@ def get_bipartite_network(sqlite_db_file, time_from=None, time_to=None):
     if time_from == None:
         time_from = min(all_times)
     else:
-        time_from = int(time.mktime(time_from.timetuple()))
+        time_from = int(calendar.timegm(time_from.timetuple()))
     if time_to == None:
         time_to = max(all_times)
     else:
-        time_to = int(time.mktime(time_to.timetuple()))
+        time_to = int(calendar.timegm(time_to.timetuple()))
 
     node_info = {}
     edge_info = {}

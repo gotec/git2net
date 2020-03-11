@@ -1020,7 +1020,7 @@ def _process_commit(args):
         c['no_of_modifications'] = len(commit.modifications)
         c['commit_message_len'] = len(commit.msg)
         if args['extract_text']:
-            c['commit_message'] = commit.msg
+            c['commit_message'] = commit.msg.encode('utf8','surrogateescape').decode('utf8','replace')
         c['project_name'] = commit.project_name
         c['parents'] = ','.join(commit.parents)
         c['merge'] = commit.merge

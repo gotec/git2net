@@ -1179,10 +1179,10 @@ def _process_repo_serial(repo_string, sqlite_db_file, commits, use_blocks=False,
                 'timeout': timeout, 'extract_text': extract_text}
         result = _process_commit(args)
 
-        if not result['commit'].empty:
-            result['commit'].to_sql('commits', con, if_exists='append')
         if not result['edits'].empty:
             result['edits'].to_sql('edits', con, if_exists='append')
+        if not result['commit'].empty:
+            result['commit'].to_sql('commits', con, if_exists='append')
 
 
 def _process_repo_parallel(repo_string, sqlite_db_file, commits, use_blocks=False,
@@ -1222,10 +1222,10 @@ def _process_repo_parallel(repo_string, sqlite_db_file, commits, use_blocks=Fals
     with multiprocessing.Pool(no_of_processes) as p:
         with tqdm(total=len(args), desc='Parallel ({0} processes)'.format(no_of_processes)) as pbar:
             for result in p.imap_unordered(_process_commit, args, chunksize=chunksize):
-                if not result['commit'].empty:
-                    result['commit'].to_sql('commits', con, if_exists='append')
                 if not result['edits'].empty:
                     result['edits'].to_sql('edits', con, if_exists='append')
+                if not result['commit'].empty:
+                    result['commit'].to_sql('commits', con, if_exists='append')
                 pbar.update(1)
 
 

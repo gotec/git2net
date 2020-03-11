@@ -366,8 +366,8 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
 
         # Levenshtein edit distance between deleted and added block.
         if extract_text:
-            e['pre_text'] = deleted_block
-            e['post_text'] = added_block
+            e['pre_text'] = deleted_block.encode('utf8','surrogateescape').decode('utf8','replace')
+            e['post_text'] = added_block.encode('utf8','surrogateescape').decode('utf8','replace')
         e['levenshtein_dist'] = lev_dist(deleted_block, added_block)
 
         # Data on origin of deleted line. Every deleted line must have an origin
@@ -431,7 +431,7 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
 
         # Levenshtein edit distance is set to 'None'. Theoretically 1 keystroke required.
         if extract_text:
-            e['pre_text'] = deleted_block
+            e['pre_text'] = deleted_block.encode('utf8','surrogateescape').decode('utf8','replace')
             e['post_text'] = None
         e['levenshtein_dist'] = None
 
@@ -476,7 +476,7 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
         # Levenshtein edit distance is length of added block as nothing existed before.
         if extract_text:
             e['pre_text'] = None
-            e['post_text'] = added_block
+            e['post_text'] = added_block.encode('utf8','surrogateescape').decode('utf8','replace')
         e['levenshtein_dist'] = len(added_block)
 
         # If the lines were newly added to this file, they might still come from another file.

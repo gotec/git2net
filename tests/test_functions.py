@@ -87,12 +87,12 @@ def test_identify_edits(repo_string):
     assert list(edits.type) == ['deletion', 'replacement', 'deletion', 'replacement', 'addition',
                                 'addition', 'addition']
 
-
 def test_process_commit(repo_string):
     commit_hash = 'f343ed53ee64717f85135c4b8d3f6bd018be80ad'
     args = {'repo_string': repo_string, 'commit_hash': commit_hash, 'use_blocks': False,
              'exclude_paths': [], 'blame_C': '-C', 'timeout': 0, 'max_modifications': 0,
              'no_of_processes': 4, 'extract_text': True}
+
     res_dict = git2net.extraction._process_commit(args)
     assert list(res_dict.keys()) == ['commit', 'edits']
 

@@ -33,8 +33,8 @@ from git2net import __version__
 import time
 import threading
 
-thread_local = threading.local()
-git_init_lock = threading.Lock()
+# thread_local = threading.local()
+git_init_lock = multiprocessing.Lock()
 
 #import stopit
 try:
@@ -1003,11 +1003,22 @@ def _process_commit(args):
     Returns:
         extracted_result: dict containing two dataframes with information of commit and edits
     """
+    # try:
+    #     git_repo = git_repo
+    #     commit = git_repo.get_commit(args['commit_hash'])
+    # except AttributeError:
+    #     print('not using tread_local')
+    #     git_repo = pydriller.GitRepository(args['repo_string'])
+
+    # if not 'git_repo' in globals():
+    #     print('does not exist')
+    #     git_repo = pydriller.GitRepository(args['repo_string'])
+    # else:
+    # global git_repo
+
     try:
-        git_repo = thread_local.git
         commit = git_repo.get_commit(args['commit_hash'])
-    except AttributeError:
-        print('not using tread_local')
+    except NameError:
         git_repo = pydriller.GitRepository(args['repo_string'])
         commit = git_repo.get_commit(args['commit_hash'])
 
@@ -1228,14 +1239,20 @@ def _process_repo_parallel(repo_string, sqlite_db_file, commits, use_blocks=Fals
             for commit in commits]
 
     # suggestion by marco-c (github.com/ishepard/pydriller/issues/110)
-    def _init(git_repo_dir):
-        with git_init_lock:
-            thread_local.git = pydriller.GitRepository(git_repo_dir)
-            # Call get_head in order to make pydriller initialise the repositry.
-            thread_local.git.get_head()
+    def _init(git_repo_dir, git_init_lock):
+        global git_repo
+        # with git_init_lock:
+        git_init_lock.acquire()
+        git_repo = pydriller.GitRepository(git_repo_dir)
+        # Call get_head in order to make pydriller initialise the repositry.
+        git_repo.get_head()
+        time.sleep(.01)
+        git_init_lock.release()
+
 
     con = sqlite3.connect(sqlite_db_file)
-    with multiprocessing.Pool(no_of_processes, initializer=_init, initargs=(repo_string,)) as p:
+    with multiprocessing.Pool(no_of_processes, initializer=_init,
+                                               initargs=(repo_string,git_init_lock)) as p:
         with tqdm(total=len(args), desc='Parallel ({0} processes)'.format(no_of_processes)) as pbar:
             for result in p.imap_unordered(_process_commit, args, chunksize=chunksize):
                 if not result['edits'].empty:

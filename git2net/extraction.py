@@ -32,6 +32,10 @@ from git2net import __version__
 
 import time
 import threading
+
+thread_local = threading.local()
+git_init_lock = threading.Lock()
+
 #import stopit
 try:
     import thread
@@ -615,7 +619,7 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
         added_lines = {}
     else:
         # Parse diff of given modification to extract added and deleted lines
-        parsed_lines = git_repo.parse_diff(modification.diff)
+        parsed_lines = modification.diff_parsed
 
         deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
         added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
@@ -999,8 +1003,13 @@ def _process_commit(args):
     Returns:
         extracted_result: dict containing two dataframes with information of commit and edits
     """
-    git_repo = pydriller.GitRepository(args['repo_string'])
-    commit = git_repo.get_commit(args['commit_hash'])
+    try:
+        git_repo = thread_local.git
+        commit = git_repo.get_commit(args['commit_hash'])
+    except AttributeError:
+        print('not using tread_local')
+        git_repo = pydriller.GitRepository(args['repo_string'])
+        commit = git_repo.get_commit(args['commit_hash'])
 
     alarm = Alarm(args['timeout'])
     alarm.start()
@@ -1206,7 +1215,7 @@ def _process_repo_parallel(repo_string, sqlite_db_file, commits, use_blocks=Fals
     Returns:
         sqlite database will be written at specified location
     """
-    git_repo = pydriller.GitRepository(repo_string)
+    # git_repo = pydriller.GitRepository(repo_string)
     exclude_paths = []
     if exclude:
         with open(exclude) as f:
@@ -1218,8 +1227,15 @@ def _process_repo_parallel(repo_string, sqlite_db_file, commits, use_blocks=Fals
              'extract_text': extract_text}
             for commit in commits]
 
+    # suggestion by marco-c (github.com/ishepard/pydriller/issues/110)
+    def _init(git_repo_dir):
+        with git_init_lock:
+            thread_local.git = pydriller.GitRepository(git_repo_dir)
+            # Call get_head in order to make pydriller initialise the repositry.
+            thread_local.git.get_head()
+
     con = sqlite3.connect(sqlite_db_file)
-    with multiprocessing.Pool(no_of_processes) as p:
+    with multiprocessing.Pool(no_of_processes, initializer=_init, initargs=(repo_string,)) as p:
         with tqdm(total=len(args), desc='Parallel ({0} processes)'.format(no_of_processes)) as pbar:
             for result in p.imap_unordered(_process_commit, args, chunksize=chunksize):
                 if not result['edits'].empty:
@@ -1293,7 +1309,7 @@ def get_unified_changes(repo_string, commit_hash, file_path):
             break
 
     # Parse the diff extracting the lines added and deleted with the given commit.
-    parsed_lines = git_repo.parse_diff(modification.diff)
+    parsed_lines = modification.diff_parsed
 
     deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
     added_lines = { x[0]:x[1] for x in parsed_lines['added'] }

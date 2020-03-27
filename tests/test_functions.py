@@ -78,7 +78,7 @@ def test_identify_edits(repo_string):
         if x.filename == filename:
             mod = x
 
-    parsed_lines = git_repo.parse_diff(mod.diff)
+    parsed_lines = mod.diff_parsed
 
     deleted_lines = { x[0]:x[1] for x in parsed_lines['deleted'] }
     added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
@@ -104,6 +104,13 @@ def test_get_unified_changes(repo_string):
     expected_code = ['A0', 'B1', 'B2', 'B3', 'A1', 'C2', 'C3', 'C4', 'B2', 'B3', 'B4', 'A5', 'A6',
                      'A7', 'F8', 'F9', 'F10', 'F11', 'F12', 'B8', 'B9', 'B10', 'B11', 'B12']
     assert list(unified_changes.code) == expected_code
+
+
+def test_mine_git_repo_sequential(repo_string, sqlite_db_file):
+    if os.path.exists(sqlite_db_file):
+        os.remove(sqlite_db_file)
+    git2net.mine_git_repo(repo_string, sqlite_db_file, blame_C='CCC4', no_of_processes=1)
+    assert True
 
 
 def test_mine_git_repo(repo_string, sqlite_db_file):

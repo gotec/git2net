@@ -55,7 +55,16 @@ if __name__ == "__main__":
     mine.add_argument('--extract-text',
         help='Extract the commit message and line texts.', dest='extract_text',
         action='store_true', default=False)
-
+    mine.add_argument('--extract_complexity',
+        help='Extract cyclomatic complexity and length of file (computationally expensive).', dest='extract_complexity',
+        action='store_true', default=False)
+    mine.add_argument('--extract_merges',
+        help='Process merges.', dest='extract_merges',
+        action='store_true', default=True)
+    mine.add_argument('--extract_merge_deletions',
+        help='Extract lines that are not accepted during a merge as deletions.', dest='extract_merge_deletions',
+        action='store_true', default=False)
+    
     # "graph" options
     subparsers_graph = graph.add_subparsers(dest='projection',
                                             help='Type of graph projection.')
@@ -107,7 +116,9 @@ if __name__ == "__main__":
                       no_of_processes=args.numprocesses, chunksize=args.chunksize,
                       exclude=args.exclude, blame_C=args.blame_C,
                       max_modifications=args.max_modifications, timeout=args.timeout,
-                      extract_text=args.extract_text)
+                      extract_text=args.extract_text, extract_complexity=args.extract_complexity,
+                      extract_merges=args.extract_merges,
+                      extract_merge_deletions=args.extract_merge_deletions)
     elif args.command == 'graph':
         if args.projection == 'commit_editing':
             _, d, _, _ = get_commit_editing_paths(args.database, filename=args.filename,

@@ -88,13 +88,13 @@ def _get_block_length(lines, k):
     return block_size
 
 
-def _identify_edits(deleted_lines, added_lines, use_blocks=False):
+def _identify_edits(deleted_lines, added_lines, extraction_settings):
     """ Maps line numbers between the pre- and post-commit version of a modification.
 
     Args:
         deleted_lines: dictionary of deleted lines
         added_lines: dictionary of added lines
-        use_blocks: bool indicating whether or not to use the block approach
+        extraction_settings: settings for the extraction
 
     Returns:
         pre_to_post: dictionary mapping line numbers before and after the commit
@@ -134,7 +134,7 @@ def _identify_edits(deleted_lines, added_lines, use_blocks=False):
 
     # line numbers after the last addition or deletion do not matter for edits
     while (pre <= max_deleted + 1) or (post <= max_added + 1):
-        if use_blocks:
+        if extraction_settings['use_blocks']:
             # compute size of added and deleted edits
             # size is reported as 0 if the line is not in added or deleted lines, respectively
             length_added_block = _get_block_length(added_lines, post)
@@ -242,16 +242,16 @@ def text_entropy(text):
     return text_entropy
 
 
-def get_commit_dag(repo_string):
+def get_commit_dag(git_repo_dir):
     """ Extracts commit dag from given path to git repository.
 
     Args:
-        repo_string: path to the git repository that is mined
+        git_repo_dir: path to the git repository that is mined
 
     Returns:
         dag: dag linking successive commits in the same branch
     """
-    git_repo = pydriller.GitRepository(repo_string)
+    git_repo = pydriller.GitRepository(git_repo_dir)
     commits = [x.hash[0:7] for x in git_repo.get_list_commits()]
     dag = pp.DAG()
     for node in commits:
@@ -322,7 +322,7 @@ def _parse_porcelain_blame(blame):
 
 
 def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_parent,
-                      blame_info_commit, use_blocks=False, extract_text=False):
+                      blame_info_commit, extraction_settings):
     """ Extracts detailed measures for a given edit.
 
     Args:
@@ -332,8 +332,7 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
         added_lines: dict of deleted lines
         blame_info_parent: blame info for parent commit as output from _parse_porcelain_blame
         blame_info_commit: blame info for current commit as output from _parse_porcelain_blame
-        use_blocks: bool indicating whether or not to use the block approach
-        extract_text: extract the commit message and line texts
+        extraction_settings: settings for the extraction
 
     Returns:
         e: pandas dataframe containing information on edits
@@ -369,13 +368,13 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
         e['post_entropy'] = text_entropy(added_block)
 
         # Levenshtein edit distance between deleted and added block.
-        if extract_text:
+        if extraction_settings['extract_text']:
             e['pre_text'] = deleted_block.encode('utf8','surrogateescape').decode('utf8','replace')
             e['post_text'] = added_block.encode('utf8','surrogateescape').decode('utf8','replace')
         e['levenshtein_dist'] = lev_dist(deleted_block, added_block)
 
         # Data on origin of deleted line. Every deleted line must have an origin
-        if use_blocks:
+        if extraction_settings['use_blocks']:
             e['original_commit_deletion'] = 'not available with use_blocks'
             e['original_line_no_deletion'] = 'not available with use_blocks'
             e['original_file_path_deletion'] = 'not available with use_blocks'
@@ -389,7 +388,7 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
                                                                     'original_file_path']
 
         # Data on the origin of added line. Can be either original or copied form other file.
-        if use_blocks:
+        if extraction_settings['use_blocks']:
             e['original_commit_addition'] = 'not available with use_blocks'
             e['original_line_no_addition'] = 'not available with use_blocks'
             e['original_file_path_addition'] = 'not available with use_blocks'
@@ -434,13 +433,13 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
         e['original_file_path_addition'] = None
 
         # Levenshtein edit distance is set to 'None'. Theoretically 1 keystroke required.
-        if extract_text:
+        if extraction_settings['extract_text']:
             e['pre_text'] = deleted_block.encode('utf8','surrogateescape').decode('utf8','replace')
             e['post_text'] = None
         e['levenshtein_dist'] = None
 
         # Data on origin of deleted line. Every deleted line must have an origin.
-        if use_blocks:
+        if extraction_settings['use_blocks']:
             e['original_commit_deletion'] = 'not available with use_blocks'
             e['original_line_no_deletion'] = 'not available with use_blocks'
             e['original_file_path_deletion'] = 'not available with use_blocks'
@@ -478,13 +477,13 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
         e['post_entropy'] = text_entropy(added_block)
 
         # Levenshtein edit distance is length of added block as nothing existed before.
-        if extract_text:
+        if extraction_settings['extract_text']:
             e['pre_text'] = None
             e['post_text'] = added_block.encode('utf8','surrogateescape').decode('utf8','replace')
         e['levenshtein_dist'] = len(added_block)
 
         # If the lines were newly added to this file, they might still come from another file.
-        if use_blocks:
+        if extraction_settings['use_blocks']:
             e['original_commit_addition'] = 'not available with use_blocks'
             e['original_line_no_addition'] = 'not available with use_blocks'
             e['original_file_path_addition'] = 'not available with use_blocks'
@@ -515,7 +514,7 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
         e['post_len_in_chars'] = None
         e['post_entropy'] = None
 
-        if use_blocks:
+        if extraction_settings['use_blocks']:
             e['original_commit_deletion'] = 'not available with use_blocks'
             e['original_line_no_deletion'] = 'not available with use_blocks'
             e['original_file_path_deletion'] = 'not available with use_blocks'
@@ -531,7 +530,7 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
             e['original_file_path_addition'] = None
 
         # Levenshtein edit distance set to 0 to distinguish from deletion
-        if extract_text:
+        if extraction_settings['extract_text']:
             e['pre_text'] = None
             e['post_text'] = None
         e['levenshtein_dist'] = 0
@@ -563,18 +562,14 @@ def is_binary_file(filename, file_content):
                 return False
 
 
-def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C',
-                   no_of_processes=os.cpu_count(), extract_text=False):
+def _extract_edits(git_repo, commit, modification, extraction_settings):
     """ Returns dataframe with metadata on edits made in a given modification.
 
     Args:
         git_repo: pydriller GitRepository object
         commit: pydriller Commit object
         modification: pydriller Modification object
-        use_blocks: bool, determins if analysis is performed on block or line basis
-        blame_C: git blame '-C' option. By default, '-C' is used.
-        no_of_processes: number of parallel processes that are spawned
-        extract_text: extract the commit message and line texts
+        extraction_settings: settings for the extraction
 
     Returns:
         edits_info: pandas DataFrame object containing metadata on all edits in given modification
@@ -632,7 +627,7 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
                                 'number_of_added_lines': None,
                                 'type': 'file_renaming'}, index=[0])
         else: # If there were lines added or deleted, the specific edits are identified.
-            _, edits = _identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
+            _, edits = _identify_edits(deleted_lines, added_lines, extraction_settings)
 
     # In order to trace the origins of lines e execute git blame is executed. For lines that were
     # deleted with the current commit, the blame needs to be executed on the parent commit. As
@@ -646,15 +641,15 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
             if len(deleted_lines) > 0:
                 assert len(commit.parents) == 1
                 blame_parent = git_repo.git.blame(commit.parents[0],
-                                                _parse_blame_C(blame_C) +
-                                                ['-w', '--show-number', '--porcelain'],
+                                                _parse_blame_C(extraction_settings['blame_C']) +
+                                                ['--show-number', '--line-porcelain'],
                                                 modification.old_path)
                 blame_info_parent = _parse_porcelain_blame(blame_parent)
 
             if len(added_lines) > 0:
                 blame_commit = git_repo.git.blame(commit.hash,
-                                                _parse_blame_C(blame_C) +
-                                                ['-w', '--show-number', '--porcelain'],
+                                                _parse_blame_C(extraction_settings['blame_C']) +
+                                                ['--show-number', '--line-porcelain'],
                                                 modification.new_path)
                 blame_info_commit = _parse_porcelain_blame(blame_commit)
 
@@ -663,22 +658,23 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
     else:
         # Next, metadata on all identified edits is extracted and added to a pandas DataFrame.
         l = []
-        for _, edit in tqdm(edits.iterrows(), leave=False, desc=commit.hash[0:7] + ' edits 1/1',
-                            disable=no_of_processes>1):
+        for _, edit in edits.iterrows():
             e = {}
             # Extract general information.
             if edit.type == 'binary_file_change':
                 e['new_path'] = edit.new_path
                 e['old_path'] = edit.old_path
-                e['cyclomatic_complexity_of_file'] = None
-                e['lines_of_code_in_file'] = None
+                if extraction_settings['extract_complexity']:
+                    e['cyclomatic_complexity_of_file'] = None
+                    e['lines_of_code_in_file'] = None
                 e['total_added_lines'] = None
                 e['total_removed_lines'] = None
             else:
                 e['new_path'] = modification.new_path
                 e['old_path'] = modification.old_path
-                e['cyclomatic_complexity_of_file'] = modification.complexity
-                e['lines_of_code_in_file'] = modification.nloc
+                if extraction_settings['extract_complexity']:
+                    e['cyclomatic_complexity_of_file'] = modification.complexity
+                    e['lines_of_code_in_file'] = modification.nloc
                 e['total_added_lines'] = modification.added
                 e['total_removed_lines'] = modification.removed
             e['filename'] = modification.filename
@@ -687,8 +683,7 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
             e['edit_type'] = edit.type
 
             e.update(_get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_parent,
-                                      blame_info_commit, use_blocks=use_blocks,
-                                      extract_text=extract_text))
+                                      blame_info_commit, extraction_settings))
 
             l.append(e)
 
@@ -696,18 +691,14 @@ def _extract_edits(git_repo, commit, modification, use_blocks=False, blame_C='-C
         return edits_info
 
 
-def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, blame_C='-C',
-                         no_of_processes=os.cpu_count(), extract_text=False):
+def _extract_edits_merge(git_repo, commit, modification_info, extraction_settings):
     """ Returns dataframe with metadata on edits made in a given modification for merge commits.
 
     Args:
         git_repo: pydriller GitRepository object
         commit: pydriller Commit object
         modification_info: information on the modification as stored in a pydriller Modification.
-        use_blocks: bool, determins if analysis is performed on block or line basis
-        blame_C: git blame '-C' option. By default, '-C' is used.
-        no_of_processes: number of parallel processes that are spawned
-        extract_text: extract the commit message and line texts
+        extraction_settings: settings for the extraction
 
     Returns:
         edits_info: pandas DataFrame object containing metadata on all edits in given modification
@@ -759,8 +750,7 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
             e.update(modification_info)
 
             e.update(_get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_parent,
-                                          blame_info_commit, use_blocks=use_blocks,
-                                          extract_text=extract_text))
+                                          blame_info_commit, extraction_settings))
 
 
 
@@ -771,8 +761,8 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
         for parent in commit.parents:
             try:
                 parent_blame = git_repo.git.blame(parent,
-                                                  _parse_blame_C(blame_C) +
-                                                        ['-w', '--show-number', '--porcelain'],
+                                                  _parse_blame_C(extraction_settings['blame_C']) +
+                                                        ['--show-number', '--line-porcelain'],
                                                   modification_info['old_path'])
 
                 if len(parent_blame) > 0:
@@ -799,8 +789,8 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
     # Then, the current state of the file is obtained by executing git blame on the current commit.
     try:
         current_blame = git_repo.git.blame(commit.hash,
-                                           _parse_blame_C(blame_C) +
-                                                ['-w', '--show-number', '--porcelain'],
+                                           _parse_blame_C(extraction_settings['blame_C']) +
+                                                ['--show-number', '--line-porcelain'],
                                            modification_info['new_path'])
 
         if len(current_blame) > 0:
@@ -873,23 +863,24 @@ def _extract_edits_merge(git_repo, commit, modification_info, use_blocks=False, 
 
     edits_parents = []
     for deleted_lines in deleted_lines_parents:
-        _, edits = _identify_edits(deleted_lines, added_lines, use_blocks=use_blocks)
+        _, edits = _identify_edits(deleted_lines, added_lines, extraction_settings)
         edits_parents.append(edits)
 
     for idx, edits in enumerate(edits_parents):
-        for _, edit in tqdm(edits.iterrows(), leave=False, desc='\t\t' + commit.hash[0:7] +
-                            ' edits {0}/{1}'.format(idx+1, len(edits_parents)),
-                            disable=no_of_processes>1):
-            e = {}
-            # Extract general information.
-            e['commit_hash'] = commit.hash
-            e['edit_type'] = edit.type
-            e.update(modification_info)
-            e.update(_get_edit_details(edit, commit, deleted_lines_parents[idx], added_lines,
-                                       parent_blames[idx], current_blame, use_blocks=use_blocks,
-                                       extract_text=extract_text))
+        for _, edit in edits.iterrows():
+            
+            # extract edit details for all edits if merge deletions are extracted
+            # or the edit type is not a deletion
+            if extraction_settings['extract_merge_deletions'] or (edit.type != 'deletion'):
+                e = {}
+                # Extract general information.
+                e['commit_hash'] = commit.hash
+                e['edit_type'] = edit.type
+                e.update(modification_info)
+                e.update(_get_edit_details(edit, commit, deleted_lines_parents[idx], added_lines,
+                                           parent_blames[idx], current_blame, extraction_settings))
 
-            edits_info.append(e)
+                edits_info.append(e)
 
     return pd.DataFrame(edits_info)
 
@@ -990,24 +981,18 @@ def _process_commit(args):
     Args:
         args: dictionary with arguments. For multiprocessing, function can only take single input.
               Dictionary must contain:
-                  repo_string: path to the git repository that is mined
+                  git_repo_dir: path to the git repository that is mined
                   commit_hash: hash of the commit that is processed
-                  use_blocks: bool, determins if analysis is performed on block or line basis
-                  no_of_processes: number of parallel processes that are spawned
-                  exclude_paths: file paths that are excluded from the analysis
-                  blame_C: string for the blame C option
-                  max_modifications: ignore commit if there are more modifications
-                  timeout: stop processing commit after given time in seconds
-                  extract_text: extract the commit message and line texts
+                  extraction_settings: settings for the extraction
 
     Returns:
         extracted_result: dict containing two dataframes with information of commit and edits
     """
     with git_init_lock:
-        git_repo = pydriller.GitRepository(args['repo_string'])   
+        git_repo = pydriller.GitRepository(args['git_repo_dir'])   
         commit = git_repo.get_commit(args['commit_hash'])
     
-    alarm = Alarm(args['timeout'])
+    alarm = Alarm(args['extraction_settings']['timeout'])
     alarm.start()
 
     try:
@@ -1024,7 +1009,7 @@ def _process_commit(args):
         c['committer_timezone'] = commit.committer_timezone
         c['no_of_modifications'] = len(commit.modifications)
         c['commit_message_len'] = len(commit.msg)
-        if args['extract_text']:
+        if args['extraction_settings']['extract_text']:
             c['commit_message'] = commit.msg.encode('utf8','surrogateescape').decode('utf8','replace')
         c['project_name'] = commit.project_name
         c['parents'] = ','.join(commit.parents)
@@ -1034,24 +1019,21 @@ def _process_commit(args):
 
         # parse modification
         df_edits = pd.DataFrame()
-        if commit.merge:
+        if commit.merge and args['extraction_settings']['extract_merges']:
             # Git does not create a modification if own changes are accpeted during a merge.
             # Therefore, the edited files are extracted manually.
             edited_file_paths = {f for p in commit.parents for f in
                                  git_repo.git.diff(commit.hash, p, '--name-only').split('\n')}
-            # edited_file_paths = _get_edited_file_paths_since_split(git_repo, commit)
 
-            if (args['max_modifications'] > 0) and \
-               (len(edited_file_paths) > args['max_modifications']):
+            if (args['extraction_settings']['max_modifications'] > 0) and \
+               (len(edited_file_paths) > args['extraction_settings']['max_modifications']):
                 print('Commit exceeding max_modifications: ', commit.hash)
                 extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
                 return extracted_result
 
-            for edited_file_path in tqdm(edited_file_paths, leave=False, desc='\t' +
-                                         commit.hash[0:7] + ' mods',
-                                         disable=(args['no_of_processes']>1)):
+            for edited_file_path in edited_file_paths:
                 exclude_file = False
-                for x in args['exclude_paths']:
+                for x in args['extraction_settings']['exclude']:
                     if edited_file_path.startswith(x + os.sep) or (edited_file_path == x):
                         exclude_file = True
                 if not exclude_file:
@@ -1061,13 +1043,15 @@ def _process_commit(args):
                                                                 edited_file_path))
 
                         if is_binary_file(edited_file_path, file_content):
-                            modification_info['cyclomatic_complexity_of_file'] = None
-                            modification_info['lines_of_code_in_file'] = None
+                            if args['extraction_settings']['extract_complexity']:
+                                modification_info['cyclomatic_complexity_of_file'] = None
+                                modification_info['lines_of_code_in_file'] = None
                         else:
-                            l = lizard.analyze_file.analyze_source_code(edited_file_path,
-                                                                        file_content)
-                            modification_info['cyclomatic_complexity_of_file'] = l.CCN
-                            modification_info['lines_of_code_in_file'] = l.nloc
+                            if args['extraction_settings']['extract_complexity']:
+                                l = lizard.analyze_file.analyze_source_code(edited_file_path,
+                                                                            file_content)
+                                modification_info['cyclomatic_complexity_of_file'] = l.CCN
+                                modification_info['lines_of_code_in_file'] = l.nloc
                         modification_info['filename'] = edited_file_path.split(os.sep)[-1]
                         modification_info['new_path'] = edited_file_path
                         modification_info['old_path'] = edited_file_path
@@ -1075,10 +1059,7 @@ def _process_commit(args):
 
                         df_edits = df_edits.append(_extract_edits_merge(git_repo, commit,
                                                         modification_info,
-                                                        use_blocks=args['use_blocks'],
-                                                        blame_C=args['blame_C'],
-                                                        no_of_processes=args['no_of_processes'],
-                                                        extract_text=args['extract_text']),
+                                                        args['extraction_settings']),
                                                 ignore_index=True, sort=True)
                     except GitCommandError:
                         # A GitCommandError occurs if the file was deleted. In this case it
@@ -1093,30 +1074,26 @@ def _process_commit(args):
                             modification_info['filename'] = edited_file_path.split(os.sep)[-1]
                             modification_info['new_path'] = None # File was deleted.
                             modification_info['old_path'] = edited_file_path
-                            modification_info['cyclomatic_complexity_of_file'] = 0
-                            modification_info['lines_of_code_in_file'] = 0
+                            if args['extraction_settings']['extract_complexity']:
+                                modification_info['cyclomatic_complexity_of_file'] = 0
+                                modification_info['lines_of_code_in_file'] = 0
                             modification_info['modification_type'] = 'merge_self_accept'
 
                             df_edits = df_edits.append(_extract_edits_merge(git_repo, commit,
                                                         modification_info,
-                                                        use_blocks=args['use_blocks'],
-                                                        blame_C=args['blame_C'],
-                                                        no_of_processes=args['no_of_processes'],
-                                                        extract_text=args['extract_text']),
+                                                        args['extraction_settings']),
                                                     ignore_index=True, sort=True)
 
         else:
-            if (args['max_modifications'] > 0) and \
-               (len(commit.modifications) > args['max_modifications']):
+            if (args['extraction_settings']['max_modifications'] > 0) and \
+               (len(commit.modifications) > args['extraction_settings']['max_modifications']):
                 print('Commit exceeding max_modifications: ', commit.hash)
                 extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
                 return extracted_result
 
-            for modification in tqdm(commit.modifications, leave=False, desc='\t' +
-                                     commit.hash[0:7] + ' mods',
-                                     disable=(args['no_of_processes']>1)):
+            for modification in commit.modifications:
                 exclude_file = False
-                for x in args['exclude_paths']:
+                for x in args['extraction_settings']['exclude']:
                     if modification.new_path:
                         if modification.new_path.startswith(x + os.sep) or \
                            (modification.new_path == x):
@@ -1126,10 +1103,7 @@ def _process_commit(args):
                             exclude_file = True
                 if not exclude_file:
                     df_edits = df_edits.append(_extract_edits(git_repo, commit, modification,
-                                                        use_blocks=args['use_blocks'],
-                                                        blame_C=args['blame_C'],
-                                                        no_of_processes=args['no_of_processes'],
-                                                        extract_text=args['extract_text']),
+                                                              args['extraction_settings']),
                                             ignore_index=True, sort=True)
 
 
@@ -1145,43 +1119,25 @@ def _process_commit(args):
     return extracted_result
 
 
-def _process_repo_serial(repo_string, sqlite_db_file, commits, use_blocks=False,
-                         no_of_processes=os.cpu_count(), exclude=None, blame_C='-C',
-                         max_modifications=0, timeout=0, extract_text=False):
+def _process_repo_serial(git_repo_dir, sqlite_db_file, commits, extraction_settings):
     """ Processes all commits in a given git repository in a serial manner.
 
     Args:
-        repo_string: path to the git repository that is mined
+        git_repo_dir: path to the git repository that is mined
         sqlite_db_file: path (including database name) where the sqlite database will be created
         commits: list of commits that have to be processed
-        use_blocks: bool, determins if analysis is performed on block or line basis
-        no_of_processes: number of parallel processes that are spawned
-        exclude: file paths that are excluded from the analysis
-        blame_C: string for the blame C option
-        max_modifications: ignore commit if there are more modifications
-        timeout: stop processing commit after given time in seconds
-        extract_text: extract the commit message and line texts
+        extraction_settings: settings for the extraction
 
     Returns:
         sqlite database will be written at specified location
     """
 
-    git_repo = pydriller.GitRepository(repo_string)
-    exclude_paths = []
-    if exclude:
-        with open(exclude) as f:
-            exclude_paths = [x.strip() for x in f.readlines()]
-
-    df_commits = pd.DataFrame()
-    df_edits = pd.DataFrame()
+    git_repo = pydriller.GitRepository(git_repo_dir)
 
     con = sqlite3.connect(sqlite_db_file)
 
     for commit in tqdm(commits, desc='Serial'):
-        args = {'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
-                'exclude_paths': exclude_paths, 'blame_C': blame_C,
-                'no_of_processes': no_of_processes, 'max_modifications': max_modifications,
-                'timeout': timeout, 'extract_text': extract_text}
+        args = {'git_repo_dir': git_repo_dir, 'commit_hash': commit.hash, 'extraction_settings': extraction_settings}
         result = _process_commit(args)
 
         if not result['edits'].empty:
@@ -1190,36 +1146,20 @@ def _process_repo_serial(repo_string, sqlite_db_file, commits, use_blocks=False,
             result['commit'].to_sql('commits', con, if_exists='append')
 
 
-def _process_repo_parallel(repo_string, sqlite_db_file, commits, use_blocks=False,
-                          no_of_processes=os.cpu_count(), chunksize=1, exclude=None, blame_C='-C',
-                          max_modifications=0, timeout=0, extract_text=False):
+def _process_repo_parallel(git_repo_dir, sqlite_db_file, commits, extraction_settings):
     """ Processes all commits in a given git repository in a parallel manner.
 
     Args:
-        repo_string: path to the git repository that is mined
+        git_repo_dir: path to the git repository that is mined
         sqlite_db_file: path (including database name) where the sqlite database will be created
         commits: list of commits that are already in the database
-        use_blocks: bool, determins if analysis is performed on block or line basis
-        no_of_processes: number of parallel processes that are spawned
-        chunksize: number of tasks that are assigned to a process at a time
-        exclude: file paths that are excluded from the analysis
-        blame_C: string for the blame C option
-        max_modifications: ignore commit if there are more modifications
-        timeout: stop processing commit after given time in seconds
-        extract_text: extract the commit message and line texts
+        extraction_settings: settings for the extraction
 
     Returns:
         sqlite database will be written at specified location
     """
-    exclude_paths = []
-    if exclude:
-        with open(exclude) as f:
-            exclude_paths = [x.strip() for x in f.readlines()]
 
-    args = [{'repo_string': repo_string, 'commit_hash': commit.hash, 'use_blocks': use_blocks,
-             'exclude_paths': exclude_paths, 'blame_C': blame_C, 'no_of_processes': no_of_processes,
-             'max_modifications': max_modifications, 'timeout': timeout,
-             'extract_text': extract_text}
+    args = [{'git_repo_dir': git_repo_dir, 'commit_hash': commit.hash, 'extraction_settings': extraction_settings}
             for commit in commits]
 
     # suggestion by marco-c (github.com/ishepard/pydriller/issues/110)
@@ -1228,10 +1168,11 @@ def _process_repo_parallel(repo_string, sqlite_db_file, commits, use_blocks=Fals
         git_init_lock = git_init_lock_
 
     con = sqlite3.connect(sqlite_db_file)
-    with multiprocessing.Pool(no_of_processes, initializer=_init,
-                                               initargs=(repo_string,git_init_lock)) as p:
-        with tqdm(total=len(args), desc='Parallel ({0} processes)'.format(no_of_processes)) as pbar:
-            for result in p.imap_unordered(_process_commit, args, chunksize=chunksize):
+    with multiprocessing.Pool(extraction_settings['no_of_processes'],
+                              initializer=_init, initargs=(git_repo_dir,git_init_lock)) as p:
+        with tqdm(total=len(args), desc='Parallel ({0} processes)' \
+                  .format(extraction_settings['no_of_processes'])) as pbar:
+            for result in p.imap_unordered(_process_commit, args, chunksize=extraction_settings['chunksize']):
                 if not result['edits'].empty:
                     result['edits'].to_sql('edits', con, if_exists='append')
                 if not result['commit'].empty:
@@ -1239,11 +1180,11 @@ def _process_repo_parallel(repo_string, sqlite_db_file, commits, use_blocks=Fals
                 pbar.update(1)
 
 
-def identify_file_renaming(repo_string):
+def identify_file_renaming(git_repo_dir):
     """ Identifies all names and locations different files in a repository have had.
 
     Args:
-        repo_string: path to the git repository that is mined
+        git_repo_dir: path to the git repository that is mined
 
     Returns:
         dag: pathpy DAG object depicting the renaming process
@@ -1251,7 +1192,7 @@ def identify_file_renaming(repo_string):
     """
 
     # TODO: Consider corner case where file is renamed and new file with old name is created.
-    git_repo = pydriller.GitRepository(repo_string)
+    git_repo = pydriller.GitRepository(git_repo_dir)
 
     dag = pp.DAG()
     for commit in tqdm(list(git_repo.get_list_commits()), desc='Creating DAG'):
@@ -1260,19 +1201,15 @@ def identify_file_renaming(repo_string):
             if (modification.new_path not in dag.nodes) and \
                (modification.old_path == modification.new_path) and \
                (modification.change_type == pydriller.domain.commit.ModificationType.ADD):
-                #dag.add_edge('added file', modification.new_path)
                 if modification.new_path not in dag.nodes:
                         dag.add_node(modification.new_path)
             elif modification.old_path != modification.new_path:
                 if pd.isnull(modification.old_path):
-                    #dag.add_edge('added file', modification.new_path)
                     if modification.new_path not in dag.nodes:
                         dag.add_node(modification.new_path)
                 elif pd.isnull(modification.new_path):
-                    #dag.add_edge(modification.old_path, 'deleted file')
                     pass
                 else:
-                    #dag.add_edge(modification.old_path, modification.new_path)
                     dag.add_edge(modification.new_path, modification.old_path)
 
     dag.make_acyclic()
@@ -1282,19 +1219,19 @@ def identify_file_renaming(repo_string):
     return dag, aliases
 
 
-def get_unified_changes(repo_string, commit_hash, file_path):
+def get_unified_changes(git_repo_dir, commit_hash, file_path):
     """ Returns dataframe with github-like unified diff representation of the content of a file
         before and after a commit for a given git repository, commit hash and file path.
 
     Args:
-        repo_string: path to the git repository that is mined
+        git_repo_dir: path to the git repository that is mined
         commit_hash: commit hash for which the changes are computed
         file_path: path to file (within the repository) for which the changes are computed
 
     Returns:
         df: pandas dataframe listing changes made to file in commit
     """
-    git_repo = pydriller.GitRepository(repo_string)
+    git_repo = pydriller.GitRepository(git_repo_dir)
     commit = git_repo.get_commit(commit_hash)
 
     # Select the correct modifictaion.
@@ -1309,7 +1246,7 @@ def get_unified_changes(repo_string, commit_hash, file_path):
     added_lines = { x[0]:x[1] for x in parsed_lines['added'] }
 
     # Indetify the edits made with the changes.
-    pre_to_post, edits = _identify_edits(deleted_lines, added_lines)
+    pre_to_post, edits = _identify_edits(deleted_lines, added_lines, {'use_blocks': False})
 
     # Extract the source code after the commit.
     post_source_code = modification.source_code.split('\n')
@@ -1350,16 +1287,16 @@ def get_unified_changes(repo_string, commit_hash, file_path):
 
     return df
 
-def mining_state_summary(repo_string, sqlite_db_file):
+def mining_state_summary(git_repo_dir, sqlite_db_file):
     """ Prints mining progress of database and returns dataframe with details on missing commits.
 
     Args:
-        repo_string: path to the git repository that is mined
+        git_repo_dir: path to the git repository that is mined
 
     Returns:
         dataframe with details on missing commits
     """
-    git_repo = pydriller.GitRepository(repo_string)
+    git_repo = pydriller.GitRepository(git_repo_dir)
     if os.path.exists(sqlite_db_file):
         try:
             with sqlite3.connect(sqlite_db_file) as con:
@@ -1426,23 +1363,27 @@ def mining_state_summary(repo_string, sqlite_db_file):
 
     return u_commits_info
 
-def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
-                  no_of_processes=os.cpu_count(), chunksize=1, exclude=[], blame_C='-C',
-                  max_modifications=0, timeout=0, commits=None, extract_text=False):
+def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
+                  use_blocks=False, no_of_processes=os.cpu_count(), chunksize=1, exclude=[],
+                  blame_C='', max_modifications=0, timeout=0, extract_text=False,
+                  extract_complexity=False, extract_merges=True, extract_merge_deletions=False):
     """ Creates sqlite database with details on commits and edits for a given git repository.
 
     Args:
-        repo_string: path to the git repository that is mined
+        git_repo_dir: path to the git repository that is mined
         sqlite_db_file: path (including database name) where the sqlite database will be created
+        commits: only consider specific set of commits, considers all if empty
         use_blocks: bool, determins if analysis is performed on block or line basis
         no_of_processes: number of parallel processes that are spawned
         chunksize: number of tasks that are assigned to a process at a time
         exclude: file paths that are excluded from the analysis
-        blame_C: string for the blame C option
+        blame_C: string for the blame C option following the regular expression "-?C{1,3}\d*" (computationally expensive)
         max_modifications: ignore commit if there are more modifications
         timeout: stop processing commit after given time in seconds
-        commits: only consider specific set of commits
         extract_text: extract the commit message and line texts
+        extract_complexity: extract cyclomatic complexity and length of file (computationally expensive)
+        extract_merges: process merges
+        extract_merge_deletions: extract lines that are not accepted during a merge as 'deletions'
 
     Returns:
         sqlite database will be written at specified location
@@ -1453,7 +1394,19 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
         raise Exception("Your system is using git " + git_version + " which is not supported by " +
                         "git2net. Please update to git >= 2.0.")
 
-    git_repo = pydriller.GitRepository(repo_string)
+    extraction_settings = {'use_blocks': use_blocks,
+                           'no_of_processes': no_of_processes,
+                           'chunksize': chunksize,
+                           'exclude': exclude,
+                           'blame_C': blame_C,
+                           'max_modifications': max_modifications,
+                           'timeout': timeout,
+                           'extract_text': extract_text,
+                           'extract_complexity': extract_complexity,
+                           'extract_merges': extract_merges,
+                           'extract_merge_deletions': extract_merge_deletions}
+    
+    git_repo = pydriller.GitRepository(git_repo_dir)
     if os.path.exists(sqlite_db_file):
         try:
             with sqlite3.connect(sqlite_db_file) as con:
@@ -1465,7 +1418,7 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
                                                               FROM _metadata""").fetchall()[0]
 
                 if (prev_method == 'blocks' if use_blocks else 'lines') and \
-                   (prev_repository == repo_string) and \
+                   (prev_repository == git_repo_dir) and \
                    (prev_extract_text == str(extract_text)):
                     try:
                         p_commits = set(x[0]
@@ -1473,7 +1426,7 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
                     except sqlite3.OperationalError:
                         p_commits = set()
                     c_commits = set(c.hash
-                        for c in pydriller.GitRepository(repo_string).get_list_commits())
+                        for c in pydriller.GitRepository(git_repo_dir).get_list_commits())
                     if not p_commits.issubset(c_commits):
                         raise Exception("Found a database that was created with identical " +
                                         "settings. However, some commits in the database are not " +
@@ -1516,33 +1469,24 @@ def mine_git_repo(repo_string, sqlite_db_file, use_blocks=False,
                                 :method,
                                 :extract_text)""",
                         {'version': 'git2net ' + str(__version__),
-                         'repository': repo_string,
+                         'repository': git_repo_dir,
                          'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                          'method': 'blocks' if use_blocks else 'lines',
                          'extract_text': str(extract_text)})
             con.commit()
             p_commits = []
 
-    if commits is None:
+    if not commits:
         u_commits = [c for c in git_repo.get_list_commits() if c.hash not in p_commits]
     else:
         c_commits = set(c.hash
-                        for c in pydriller.GitRepository(repo_string).get_list_commits())
+                        for c in pydriller.GitRepository(git_repo_dir).get_list_commits())
         if not set(commits).issubset(c_commits):
             raise Exception("At least one provided commit does not exist in the repository.")
         commits = [git_repo.get_commit(h) for h in commits]
         u_commits = [c for c in commits if c.hash not in p_commits]
 
-    if no_of_processes > 1:
-        _process_repo_parallel(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
-                               commits=u_commits, use_blocks=use_blocks,
-                               no_of_processes=no_of_processes, chunksize=chunksize,
-                               exclude=exclude, blame_C=blame_C,
-                               max_modifications=max_modifications, timeout=timeout,
-                               extract_text=extract_text)
+    if extraction_settings['no_of_processes'] > 1:
+        _process_repo_parallel(git_repo_dir, sqlite_db_file, u_commits, extraction_settings)
     else:
-        _process_repo_serial(repo_string=repo_string, sqlite_db_file=sqlite_db_file,
-                             commits=u_commits, use_blocks=use_blocks,
-                             no_of_processes=no_of_processes, exclude=exclude,
-                             blame_C=blame_C, max_modifications=max_modifications, timeout=timeout,
-                             extract_text=extract_text)
+        _process_repo_serial(git_repo_dir, sqlite_db_file, u_commits, extraction_settings)

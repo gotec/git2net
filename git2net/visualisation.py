@@ -15,7 +15,7 @@ import math
 import numpy as np
 import calendar
 
-def get_line_editing_paths(sqlite_db_file, repo_string, commit_hashes=None, file_paths=None,
+def get_line_editing_paths(sqlite_db_file, git_repo_dir, commit_hashes=None, file_paths=None,
                            with_start=False, merge_renaming=False):
     """ Returns line editing DAG as well as line editing paths.
 
@@ -23,7 +23,7 @@ def get_line_editing_paths(sqlite_db_file, repo_string, commit_hashes=None, file
 
     Args:
         sqlite_db_file: path to sqlite database mined with git2net line method
-        repo_string: path to the git repository that is mined
+        git_repo_dir: path to the git repository that is mined
         commit_hashes: list of commits to consider, by default all commits are considered
         file_paths: list of files to consider, by default all files are considered
         with_start: bool, determines if node for filename is included as start for all editing paths
@@ -56,7 +56,7 @@ def get_line_editing_paths(sqlite_db_file, repo_string, commit_hashes=None, file
     if merge_renaming:
         print('Searching for aliases')
         # Identify files that have been renamed.
-        _, aliases = identify_file_renaming(repo_string)
+        _, aliases = identify_file_renaming(git_repo_dir)
 
     dag = pp.DAG()
     node_info = {}

@@ -1141,9 +1141,9 @@ def _process_repo_serial(git_repo_dir, sqlite_db_file, commits, extraction_setti
         result = _process_commit(args)
 
         if not result['edits'].empty:
-            result['edits'].to_sql('edits', con, if_exists='append')
+            result['edits'].to_sql('edits', con, if_exists='append', index=False)
         if not result['commit'].empty:
-            result['commit'].to_sql('commits', con, if_exists='append')
+            result['commit'].to_sql('commits', con, if_exists='append', index=False)
 
 
 def _process_repo_parallel(git_repo_dir, sqlite_db_file, commits, extraction_settings):
@@ -1174,9 +1174,9 @@ def _process_repo_parallel(git_repo_dir, sqlite_db_file, commits, extraction_set
                   .format(extraction_settings['no_of_processes'])) as pbar:
             for result in p.imap_unordered(_process_commit, args, chunksize=extraction_settings['chunksize']):
                 if not result['edits'].empty:
-                    result['edits'].to_sql('edits', con, if_exists='append')
+                    result['edits'].to_sql('edits', con, if_exists='append', index=False)
                 if not result['commit'].empty:
-                    result['commit'].to_sql('commits', con, if_exists='append')
+                    result['commit'].to_sql('commits', con, if_exists='append', index=False)
                 pbar.update(1)
 
 

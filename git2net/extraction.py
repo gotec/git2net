@@ -868,7 +868,7 @@ def _extract_edits_merge(git_repo, commit, modification_info, extraction_setting
 
     for idx, edits in enumerate(edits_parents):
         for _, edit in edits.iterrows():
-            
+
             # extract edit details for all edits if merge deletions are extracted
             # or the edit type is not a deletion
             if extraction_settings['extract_merge_deletions'] or (edit.type != 'deletion'):
@@ -989,9 +989,9 @@ def _process_commit(args):
         extracted_result: dict containing two dataframes with information of commit and edits
     """
     with git_init_lock:
-        git_repo = pydriller.GitRepository(args['git_repo_dir'])   
+        git_repo = pydriller.GitRepository(args['git_repo_dir'])
         commit = git_repo.get_commit(args['commit_hash'])
-    
+
     alarm = Alarm(args['extraction_settings']['timeout'])
     alarm.start()
 
@@ -1377,7 +1377,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
         no_of_processes: number of parallel processes that are spawned
         chunksize: number of tasks that are assigned to a process at a time
         exclude: file paths that are excluded from the analysis
-        blame_C: string for the blame C option following the regular expression "-?C{1,3}\d*" (computationally expensive)
+        blame_C: string for the blame C option following the pattern "-C[<num>]" (computationally expensive)
         max_modifications: ignore commit if there are more modifications
         timeout: stop processing commit after given time in seconds
         extract_text: extract the commit message and line texts
@@ -1405,7 +1405,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                            'extract_complexity': extract_complexity,
                            'extract_merges': extract_merges,
                            'extract_merge_deletions': extract_merge_deletions}
-    
+
     git_repo = pydriller.GitRepository(git_repo_dir)
     if os.path.exists(sqlite_db_file):
         try:

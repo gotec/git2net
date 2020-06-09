@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 ###############################################
 # Allows to use git2net from the command line #
@@ -105,7 +105,9 @@ if __name__ == "__main__":
                         dest='filename', default=None, type=str)
 
     args = parser.parse_args()
-    print(args.commits)
+    
+    if not args.command:
+        raise Exception('Requires command argument: "mine" or "graph".')
     
     if args.commits:
         with open(args.commits, 'r') as f:
@@ -119,8 +121,6 @@ if __name__ == "__main__":
             args.exclude = [x for x in args.exclude if len(x) > 0]
     else:
         args.exclude = []
-    
-    print(args)
     
     if args.command == 'graph':
         if args.projection in has_time:

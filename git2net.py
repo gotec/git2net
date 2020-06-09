@@ -15,7 +15,6 @@ import argparse
 import os
 import datetime
 
-
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Allows git2net to be used from the command line.')
@@ -36,6 +35,9 @@ if __name__ == "__main__":
 
 
     # "mine" options
+    mine.add_argument('--commits',
+        help='Path to text file with list of commits to mine. Mines all commits if not provided (default).',
+        dest='commits', type=str, default=None)
     mine.add_argument('--use-blocks',
         help='Compare added and deleted blocks of code rather than lines.', dest='use_blocks',
         action='store_true', default=False)
@@ -46,8 +48,8 @@ if __name__ == "__main__":
         default=1, type=int, dest='chunksize')
     mine.add_argument('--exclude', help='Exclude path prefixes in given file.', type=str,
         default=None, dest='exclude')
-    mine.add_argument('--blame-C', help="Git blame -C option. To not use -C provide ''", type=str,
-        dest='blame_C', default='-C')
+    mine.add_argument('--blame-C', help="Git blame -C option. To not use -C provide '' (default)", type=str,
+        dest='blame_C', default='')
     mine.add_argument('--max-modifications', help='Do not process commits with more than given ' +
         'number of modifications. Use 0 to disable.', dest='max_modifications', default=0, type=int)
     mine.add_argument('--timeout', help='Stop processing commit after timeout. Use 0 to disable.',
@@ -103,7 +105,23 @@ if __name__ == "__main__":
                         dest='filename', default=None, type=str)
 
     args = parser.parse_args()
-
+    print(args.commits)
+    
+    if args.commits:
+        with open(args.commits, 'r') as f:
+            args.commits = f.read().split('\n')
+            args.commits = [x for x in args.commits if len(x) > 0]
+    else:
+        args.commits = []
+    if args.exclude:
+        with open(args.exclude, 'r') as f:
+            args.exclude = f.read().split('\n')
+            args.exclude = [x for x in args.exclude if len(x) > 0]
+    else:
+        args.exclude = []
+    
+    print(args)
+    
     if args.command == 'graph':
         if args.projection in has_time:
             if args.time_from:
@@ -112,7 +130,7 @@ if __name__ == "__main__":
                 args.time_to = datetime.strptime(args.time_to, '%Y-%m-%d %H:%M:%S')
 
     if args.command == 'mine':
-        mine_git_repo(args.repo, args.database, use_blocks=args.use_blocks,
+        mine_git_repo(args.repo, args.database, commits=args.commits, use_blocks=args.use_blocks,
                       no_of_processes=args.numprocesses, chunksize=args.chunksize,
                       exclude=args.exclude, blame_C=args.blame_C,
                       max_modifications=args.max_modifications, timeout=args.timeout,

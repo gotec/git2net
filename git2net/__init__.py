@@ -13,6 +13,7 @@ from .extraction import get_commit_dag
 from .extraction import identify_file_renaming
 from .extraction import text_entropy
 from .extraction import mining_state_summary
+from .extraction import check_mining_complete
 from .visualisation import get_line_editing_paths
 from .visualisation import get_commit_editing_paths
 from .visualisation import get_coediting_network

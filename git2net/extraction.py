@@ -1287,11 +1287,45 @@ def get_unified_changes(git_repo_dir, commit_hash, file_path):
 
     return df
 
+def check_mining_complete(git_repo_dir, sqlite_db_file, commits=[]):
+    """ Prints mining progress of database and returns dataframe with details on missing commits.
+
+    Args:
+        git_repo_dir: path to the git repository that is mined
+        sqlite_db_file: path (including database name) where with sqlite database
+        commits: only consider specific set of commits, considers all if empty
+        
+    Returns:
+        True if all commits are included in the database, otherwise False
+    """
+    git_repo = pydriller.GitRepository(git_repo_dir)
+    if os.path.exists(sqlite_db_file):
+        try:
+            with sqlite3.connect(sqlite_db_file) as con:
+                try:
+                    p_commits = set(x[0] for x in
+                        con.execute("SELECT hash FROM commits").fetchall())
+                except sqlite3.OperationalError:
+                    p_commits = set()
+        except sqlite3.OperationalError:
+            raise Exception("The provided file is not a compatible database.")
+    else:
+        raise Exception("Found no database at provided path.")
+
+    if not commits:
+        commits = [c.hash for c in git_repo.get_list_commits()]
+    if set(commits).issubset(p_commits):
+        return True
+    else:
+        return False
+    
+
 def mining_state_summary(git_repo_dir, sqlite_db_file):
     """ Prints mining progress of database and returns dataframe with details on missing commits.
 
     Args:
         git_repo_dir: path to the git repository that is mined
+        sqlite_db_file: path (including database name) where with sqlite database
 
     Returns:
         dataframe with details on missing commits

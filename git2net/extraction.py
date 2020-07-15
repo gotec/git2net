@@ -641,16 +641,14 @@ def _extract_edits(git_repo, commit, modification, extraction_settings):
             if len(deleted_lines) > 0:
                 assert len(commit.parents) == 1
                 blame_parent = git_repo.git.blame(commit.parents[0],
-                                                _parse_blame_C(extraction_settings['blame_C']) +
-                                                ['--show-number', '--line-porcelain'],
-                                                modification.old_path)
+                                                  extraction_settings['blame_options'],
+                                                  modification.old_path)
                 blame_info_parent = _parse_porcelain_blame(blame_parent)
 
             if len(added_lines) > 0:
                 blame_commit = git_repo.git.blame(commit.hash,
-                                                _parse_blame_C(extraction_settings['blame_C']) +
-                                                ['--show-number', '--line-porcelain'],
-                                                modification.new_path)
+                                                  extraction_settings['blame_options'],
+                                                  modification.new_path)
                 blame_info_commit = _parse_porcelain_blame(blame_commit)
 
     except GitCommandError:
@@ -761,8 +759,7 @@ def _extract_edits_merge(git_repo, commit, modification_info, extraction_setting
         for parent in commit.parents:
             try:
                 parent_blame = git_repo.git.blame(parent,
-                                                  _parse_blame_C(extraction_settings['blame_C']) +
-                                                        ['--show-number', '--line-porcelain'],
+                                                  extraction_settings['blame_options'],
                                                   modification_info['old_path'])
 
                 if len(parent_blame) > 0:
@@ -789,8 +786,7 @@ def _extract_edits_merge(git_repo, commit, modification_info, extraction_setting
     # Then, the current state of the file is obtained by executing git blame on the current commit.
     try:
         current_blame = git_repo.git.blame(commit.hash,
-                                           _parse_blame_C(extraction_settings['blame_C']) +
-                                                ['--show-number', '--line-porcelain'],
+                                           extraction_settings['blame_options'],
                                            modification_info['new_path'])
 
         if len(current_blame) > 0:
@@ -1399,7 +1395,7 @@ def mining_state_summary(git_repo_dir, sqlite_db_file):
 
 def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                   use_blocks=False, no_of_processes=os.cpu_count(), chunksize=1, exclude=[],
-                  blame_C='', max_modifications=0, timeout=0, extract_text=False,
+                  blame_C='', blame_w=False, max_modifications=0, timeout=0, extract_text=False,
                   extract_complexity=False, extract_merges=True, extract_merge_deletions=False):
     """ Creates sqlite database with details on commits and edits for a given git repository.
 
@@ -1412,6 +1408,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
         chunksize: number of tasks that are assigned to a process at a time
         exclude: file paths that are excluded from the analysis
         blame_C: string for the blame C option following the pattern "-C[<num>]" (computationally expensive)
+        blame_w: bool, ignore whitespaces in git blame (-w option)
         max_modifications: ignore commit if there are more modifications
         timeout: stop processing commit after given time in seconds
         extract_text: extract the commit message and line texts
@@ -1428,11 +1425,15 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
         raise Exception("Your system is using git " + git_version + " which is not supported by " +
                         "git2net. Please update to git >= 2.0.")
 
+    blame_options = _parse_blame_C(blame_C) + ['--show-number', '--line-porcelain']
+    if blame_w:
+        blame_options += ['-w']
+        
     extraction_settings = {'use_blocks': use_blocks,
                            'no_of_processes': no_of_processes,
                            'chunksize': chunksize,
                            'exclude': exclude,
-                           'blame_C': blame_C,
+                           'blame_options': blame_options,
                            'max_modifications': max_modifications,
                            'timeout': timeout,
                            'extract_text': extract_text,

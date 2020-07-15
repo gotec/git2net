@@ -43,6 +43,8 @@ def main():
         default=None, dest='exclude')
     mine.add_argument('--blame-C', help="Git blame -C option. To not use -C provide '' (default)", type=str,
         dest='blame_C', default='')
+    mine.add_argument('--blame-w', help='ignore whitespaces in git blame (-w option)', dest='blame_w',
+        action='store_true', default=False)
     mine.add_argument('--max-modifications', help='Do not process commits with more than given ' +
         'number of modifications. Use 0 to disable.', dest='max_modifications', default=0, type=int)
     mine.add_argument('--timeout', help='Stop processing commit after timeout. Use 0 to disable.',
@@ -125,7 +127,7 @@ def main():
     if args.command == 'mine':
         mine_git_repo(args.repo, args.database, commits=args.commits, use_blocks=args.use_blocks,
                       no_of_processes=args.numprocesses, chunksize=args.chunksize,
-                      exclude=args.exclude, blame_C=args.blame_C,
+                      exclude=args.exclude, blame_C=args.blame_C, blame_w=args.blame_w,
                       max_modifications=args.max_modifications, timeout=args.timeout,
                       extract_text=args.extract_text, extract_complexity=args.extract_complexity,
                       extract_merges=args.extract_merges,

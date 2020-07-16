@@ -436,7 +436,7 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_paren
         if extraction_settings['extract_text']:
             e['pre_text'] = deleted_block.encode('utf8','surrogateescape').decode('utf8','replace')
             e['post_text'] = None
-        e['levenshtein_dist'] = None
+        e['levenshtein_dist'] = len(deleted_block)
 
         # Data on origin of deleted line. Every deleted line must have an origin.
         if extraction_settings['use_blocks']:

@@ -25,6 +25,7 @@ import re
 import lizard
 import sys
 import collections
+import git
 
 #from contextlib import closing
 
@@ -1284,7 +1285,7 @@ def get_unified_changes(git_repo_dir, commit_hash, file_path):
     return df
 
 def check_mining_complete(git_repo_dir, sqlite_db_file, commits=[]):
-    """ Prints mining progress of database and returns dataframe with details on missing commits.
+    """ Checks status of a mining operation
 
     Args:
         git_repo_dir: path to the git repository that is mined
@@ -1525,3 +1526,59 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
         _process_repo_parallel(git_repo_dir, sqlite_db_file, u_commits, extraction_settings)
     else:
         _process_repo_serial(git_repo_dir, sqlite_db_file, u_commits, extraction_settings)
+        
+        
+        
+def mine_github(github_url, git_repo_dir, sqlite_db_file, branch='master', **kwargs):
+    """ Clones a repository from github and starts the mining process.
+
+    Args:
+        github_url: url to the publicly accessible github project that will be mined
+                    can be priovided as full url or <OWNER>/<REPOSITORY>
+        git_repo_dir: path to the git repository that is mined
+                      if path ends with '/' an additional folder will be created
+        sqlite_db_file: path (including database name) where the sqlite database will be created
+        branch: the branch of the github project that will be checked out and mined
+        **kwargs: arguments that will be passed on to mine_git_repo
+
+    Returns:
+        git repository will be cloned to specified location
+        sqlite database will be written at specified location
+    """
+    # github_url can either be provided as full url or as in form <USER>/<REPO>
+    user_repo_pattern = r'^([^\/\.]*)\/([^\/\.]*)$'
+    full_url_pattern = r'^https:\/\/github\.com\/([^\/\.]*)\/([^\/\.]*)(\.git)?$'
+    
+    match = re.match(user_repo_pattern, github_url)
+    if match:
+        print(match.groups())
+        git_owner = match.groups()[0]
+        git_repo = match.groups()[1]
+        github_url = 'https://github.com/{}/{}'.format(git_owner, git_repo)
+    else:
+        match = re.match(full_url_pattern, github_url)
+        if match:
+            print(match.groups())
+            git_owner = match.groups()[0]
+            git_repo = match.groups()[1]
+        else:
+            raise Exception('Invalid github_url provided.')    
+    
+    # detect the correct directories to work with
+    local_directory = '/'.join(git_repo_dir.split('/')[:-1])
+    git_repo_folder = git_repo_dir.split('/')[-1]
+    
+    if local_directory == '':
+        local_directory = '.'
+    if git_repo_folder == '':
+        git_repo_folder = git_owner + '__' + git_repo
+    
+    # check if the folder is empty if it exists
+    if os.path.exists(git_repo_dir) and \
+       (len(os.listdir(os.path.join(local_directory, git_repo_folder))) > 0):
+        print('Provided folder is not empty. Skipping the cloning and trying to resume.')
+    else:
+        git.Git(local_directory).clone(github_url, git_repo_folder, branch=branch)
+    
+    # mine the cloned repo
+    mine_git_repo(git_repo_dir, sqlite_db_file, **kwargs)

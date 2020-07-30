@@ -1454,7 +1454,6 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                                                               FROM _metadata""").fetchall()[0]
 
                 if (prev_method == 'blocks' if use_blocks else 'lines') and \
-                   (prev_repository == git_repo_dir) and \
                    (prev_extract_text == str(extract_text)):
                     try:
                         p_commits = set(x[0]

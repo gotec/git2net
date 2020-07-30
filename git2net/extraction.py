@@ -1529,7 +1529,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
         
         
         
-def mine_github(github_url, git_repo_dir, sqlite_db_file, branch='master', **kwargs):
+def mine_github(github_url, git_repo_dir, sqlite_db_file, branch=None, **kwargs):
     """ Clones a repository from github and starts the mining process.
 
     Args:
@@ -1538,7 +1538,8 @@ def mine_github(github_url, git_repo_dir, sqlite_db_file, branch='master', **kwa
         git_repo_dir: path to the git repository that is mined
                       if path ends with '/' an additional folder will be created
         sqlite_db_file: path (including database name) where the sqlite database will be created
-        branch: the branch of the github project that will be checked out and mined
+        branch: The branch of the github project that will be checked out and mined.
+                If no branch is provided the default branch of the repository is used.
         **kwargs: arguments that will be passed on to mine_git_repo
 
     Returns:
@@ -1578,7 +1579,10 @@ def mine_github(github_url, git_repo_dir, sqlite_db_file, branch='master', **kwa
        (len(os.listdir(os.path.join(local_directory, git_repo_folder))) > 0):
         print('Provided folder is not empty. Skipping the cloning and trying to resume.')
     else:
-        git.Git(local_directory).clone(github_url, git_repo_folder, branch=branch)
+        if branch:
+            git.Git(local_directory).clone(github_url, git_repo_folder, branch=branch)
+        else:
+            git.Git(local_directory).clone(github_url, git_repo_folder)
     
     # mine the cloned repo
     mine_git_repo(git_repo_dir, sqlite_db_file, **kwargs)

@@ -1546,7 +1546,7 @@ def mine_github(github_url, git_repo_dir, sqlite_db_file, branch=None, **kwargs)
         sqlite database will be written at specified location
     """
     # github_url can either be provided as full url or as in form <USER>/<REPO>
-    user_repo_pattern = r'^([^\/\.]*)\/([^\/\.]*)$'
+    user_repo_pattern = r'^([^\/]*)\/([^\/]*)$'
     full_url_pattern = r'^https:\/\/github\.com\/([^\/\.]*)\/([^\/\.]*)(\.git)?$'
     
     match = re.match(user_repo_pattern, github_url)

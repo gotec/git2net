@@ -1468,8 +1468,10 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                         if prev_repository != git_repo.repo.remotes.origin.url:
                             raise Exception("Found a database that was created with identical " +
                                             "settings. However, some commits in the database are not " +
-                                            "in the provided git repository. Please provide a clean " +
-                                            "database.")
+                                            "in the provided git repository and the url of the current " +
+                                            "origin is different to the one listed in the database. " +
+                                            "Please provide a clean database or update the origin in " +
+                                            "the current database if you want to proceed.")
                     else:
                         if p_commits == c_commits:
                             print("The provided database is already complete!")
@@ -1527,10 +1529,15 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
         commits = [git_repo.get_commit(h) for h in commits]
         u_commits = [c for c in commits if c.hash not in p_commits]
 
-    print(git_repo.repo.active_branch.name)
-    print(git_repo.repo.remotes.origin.url)    
-    print(p_commits.intersection(c_commits))
-    # assert False
+    current_branch = git_repo.repo.active_branch.name
+    for c in p_commits.intersection(c_commits):
+        b = con.execute("SELECT branches FROM commits WHERE hash = (:hash)", {'hash': c}).fetchall()[0][0]
+        b = set(b.split(','))
+        if current_branch not in b:
+            b.add(current_branch)
+            con.execute("UPDATE commits SET branches = (:branches) WHERE hash = (:hash)",
+                           {'branches': ','.join(b), 'hash': c})
+    con.commit()
         
     if extraction_settings['no_of_processes'] > 1:
         _process_repo_parallel(git_repo_dir, sqlite_db_file, u_commits, extraction_settings)

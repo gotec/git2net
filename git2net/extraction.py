@@ -1443,6 +1443,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                            'extract_merge_deletions': extract_merge_deletions}
 
     git_repo = pydriller.GitRepository(git_repo_dir)
+    
     if os.path.exists(sqlite_db_file):
         try:
             with sqlite3.connect(sqlite_db_file) as con:
@@ -1456,6 +1457,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                 if (prev_method == 'blocks' if use_blocks else 'lines') and \
                    (prev_extract_text == str(extract_text)):
                     try:
+                        # processed commits
                         p_commits = set(x[0]
                             for x in con.execute("SELECT hash FROM commits").fetchall())
                     except sqlite3.OperationalError:
@@ -1463,10 +1465,11 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                     c_commits = set(c.hash
                         for c in pydriller.GitRepository(git_repo_dir).get_list_commits())
                     if not p_commits.issubset(c_commits):
-                        raise Exception("Found a database that was created with identical " +
-                                        "settings. However, some commits in the database are not " +
-                                        "in the provided git repository. Please provide a clean " +
-                                        "database.")
+                        if prev_repository != git_repo.repo.remotes.origin.url:
+                            raise Exception("Found a database that was created with identical " +
+                                            "settings. However, some commits in the database are not " +
+                                            "in the provided git repository. Please provide a clean " +
+                                            "database.")
                     else:
                         if p_commits == c_commits:
                             print("The provided database is already complete!")
@@ -1504,23 +1507,31 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                                 :method,
                                 :extract_text)""",
                         {'version': 'git2net ' + str(__version__),
-                         'repository': git_repo_dir,
+                         'repository': git_repo.repo.remotes.origin.url,
                          'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                          'method': 'blocks' if use_blocks else 'lines',
                          'extract_text': str(extract_text)})
             con.commit()
-            p_commits = []
+            p_commits = set()
 
+            
+    # commits in the currently mined repository
+    c_commits = set(c.hash
+                    for c in pydriller.GitRepository(git_repo_dir).get_list_commits())
     if not commits:
+        # unprocessed commits
         u_commits = [c for c in git_repo.get_list_commits() if c.hash not in p_commits]
     else:
-        c_commits = set(c.hash
-                        for c in pydriller.GitRepository(git_repo_dir).get_list_commits())
         if not set(commits).issubset(c_commits):
             raise Exception("At least one provided commit does not exist in the repository.")
         commits = [git_repo.get_commit(h) for h in commits]
         u_commits = [c for c in commits if c.hash not in p_commits]
 
+    print(git_repo.repo.active_branch.name)
+    print(git_repo.repo.remotes.origin.url)    
+    print(p_commits.intersection(c_commits))
+    # assert False
+        
     if extraction_settings['no_of_processes'] > 1:
         _process_repo_parallel(git_repo_dir, sqlite_db_file, u_commits, extraction_settings)
     else:

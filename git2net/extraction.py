@@ -1284,7 +1284,7 @@ def get_unified_changes(git_repo_dir, commit_hash, file_path):
 
     return df
 
-def check_mining_complete(git_repo_dir, sqlite_db_file, commits=[]):
+def check_mining_complete(git_repo_dir, sqlite_db_file, commits=[], all_branches=False):
     """ Checks status of a mining operation
 
     Args:
@@ -1310,14 +1310,14 @@ def check_mining_complete(git_repo_dir, sqlite_db_file, commits=[]):
         raise Exception("Found no database at provided path.")
 
     if not commits:
-        commits = [c.hash for c in git_repo.get_list_commits()]
+        commits = [c.hash for c in git_repo.get_list_commits(all=all_branches)]
     if set(commits).issubset(p_commits):
         return True
     else:
         return False
     
 
-def mining_state_summary(git_repo_dir, sqlite_db_file):
+def mining_state_summary(git_repo_dir, sqlite_db_file, all_branches=False):
     """ Prints mining progress of database and returns dataframe with details on missing commits.
 
     Args:
@@ -1341,7 +1341,7 @@ def mining_state_summary(git_repo_dir, sqlite_db_file):
     else:
         raise Exception("Found no database at provided path.")
 
-    commits = [c for c in git_repo.get_list_commits()]
+    commits = [c for c in git_repo.get_list_commits(all=all_branches)]
     if not p_commits.issubset({c.hash for c in commits}):
         raise Exception("The database does not match the provided repository.")
 
@@ -1397,7 +1397,8 @@ def mining_state_summary(git_repo_dir, sqlite_db_file):
 def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                   use_blocks=False, no_of_processes=os.cpu_count(), chunksize=1, exclude=[],
                   blame_C='', blame_w=False, max_modifications=0, timeout=0, extract_text=False,
-                  extract_complexity=False, extract_merges=True, extract_merge_deletions=False):
+                  extract_complexity=False, extract_merges=True, extract_merge_deletions=False,
+                  all_branches=False):
     """ Creates sqlite database with details on commits and edits for a given git repository.
 
     Args:
@@ -1462,8 +1463,12 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                             for x in con.execute("SELECT hash FROM commits").fetchall())
                     except sqlite3.OperationalError:
                         p_commits = set()
-                    c_commits = set(c.hash
-                        for c in pydriller.GitRepository(git_repo_dir).get_list_commits())
+                    if all_branches:
+                        c_commits = set(c.hash for c in
+                                        pydriller.GitRepository(git_repo_dir).get_list_commits(all=True))
+                    else:
+                        c_commits = set(c.hash for c in
+                                        pydriller.GitRepository(git_repo_dir).get_list_commits())
                     if not p_commits.issubset(c_commits):
                         if prev_repository != git_repo.repo.remotes.origin.url:
                             raise Exception("Found a database that was created with identical " +
@@ -1518,11 +1523,18 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
 
             
     # commits in the currently mined repository
-    c_commits = set(c.hash
-                    for c in pydriller.GitRepository(git_repo_dir).get_list_commits())
+    if all_branches:
+        c_commits = set(c.hash for c in
+                        pydriller.GitRepository(git_repo_dir).get_list_commits(all=True))
+    else:
+        c_commits = set(c.hash for c in
+                        pydriller.GitRepository(git_repo_dir).get_list_commits())
     if not commits:
         # unprocessed commits
-        u_commits = [c for c in git_repo.get_list_commits() if c.hash not in p_commits]
+        if all_branches:
+            u_commits = [c for c in git_repo.get_list_commits(all=True) if c.hash not in p_commits]
+        else:
+            u_commits = [c for c in git_repo.get_list_commits() if c.hash not in p_commits]
     else:
         if not set(commits).issubset(c_commits):
             raise Exception("At least one provided commit does not exist in the repository.")

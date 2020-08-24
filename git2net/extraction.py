@@ -1284,7 +1284,7 @@ def get_unified_changes(git_repo_dir, commit_hash, file_path):
 
     return df
 
-def check_mining_complete(git_repo_dir, sqlite_db_file, commits=[], all_branches=False):
+def check_mining_complete(git_repo_dir, sqlite_db_file, commits=[], all_branches=False, return_number_missing=False):
     """ Checks status of a mining operation
 
     Args:
@@ -1312,9 +1312,15 @@ def check_mining_complete(git_repo_dir, sqlite_db_file, commits=[], all_branches
     if not commits:
         commits = [c.hash for c in git_repo.get_list_commits(all=all_branches)]
     if set(commits).issubset(p_commits):
-        return True
+        if return_number_missing:
+            return (True, 0)
+        else:
+            return True
     else:
-        return False
+        if return_number_missing:
+            return (False, len(set(commits).difference(p_commits)))
+        else:
+            return False
     
 
 def mining_state_summary(git_repo_dir, sqlite_db_file, all_branches=False):

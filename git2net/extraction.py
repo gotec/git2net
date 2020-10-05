@@ -1131,16 +1131,15 @@ def _process_repo_serial(git_repo_dir, sqlite_db_file, commits, extraction_setti
 
     git_repo = pydriller.GitRepository(git_repo_dir)
 
-    con = sqlite3.connect(sqlite_db_file)
-
     for commit in tqdm(commits, desc='Serial'):
         args = {'git_repo_dir': git_repo_dir, 'commit_hash': commit.hash, 'extraction_settings': extraction_settings}
         result = _process_commit(args)
 
-        if not result['edits'].empty:
-            result['edits'].to_sql('edits', con, if_exists='append', index=False)
-        if not result['commit'].empty:
-            result['commit'].to_sql('commits', con, if_exists='append', index=False)
+        with sqlite3.connect(sqlite_db_file) as con:
+            if not result['edits'].empty:
+                result['edits'].to_sql('edits', con, if_exists='append', index=False)
+            if not result['commit'].empty:
+                result['commit'].to_sql('commits', con, if_exists='append', index=False)
 
 
 def _process_repo_parallel(git_repo_dir, sqlite_db_file, commits, extraction_settings):
@@ -1164,16 +1163,16 @@ def _process_repo_parallel(git_repo_dir, sqlite_db_file, commits, extraction_set
         global git_init_lock
         git_init_lock = git_init_lock_
 
-    con = sqlite3.connect(sqlite_db_file)
     with multiprocessing.Pool(extraction_settings['no_of_processes'],
                               initializer=_init, initargs=(git_repo_dir,git_init_lock)) as p:
         with tqdm(total=len(args), desc='Parallel ({0} processes)' \
                   .format(extraction_settings['no_of_processes'])) as pbar:
             for result in p.imap_unordered(_process_commit, args, chunksize=extraction_settings['chunksize']):
-                if not result['edits'].empty:
-                    result['edits'].to_sql('edits', con, if_exists='append', index=False)
-                if not result['commit'].empty:
-                    result['commit'].to_sql('commits', con, if_exists='append', index=False)
+                with sqlite3.connect(sqlite_db_file) as con:
+                    if not result['edits'].empty:
+                        result['edits'].to_sql('edits', con, if_exists='append', index=False)
+                    if not result['commit'].empty:
+                        result['commit'].to_sql('commits', con, if_exists='append', index=False)
                 pbar.update(1)
 
 
@@ -1291,7 +1290,7 @@ def check_mining_complete(git_repo_dir, sqlite_db_file, commits=[], all_branches
         git_repo_dir: path to the git repository that is mined
         sqlite_db_file: path (including database name) where with sqlite database
         commits: only consider specific set of commits, considers all if empty
-        
+
     Returns:
         True if all commits are included in the database, otherwise False
     """
@@ -1321,7 +1320,7 @@ def check_mining_complete(git_repo_dir, sqlite_db_file, commits=[], all_branches
             return (False, len(set(commits).difference(p_commits)))
         else:
             return False
-    
+
 
 def mining_state_summary(git_repo_dir, sqlite_db_file, all_branches=False):
     """ Prints mining progress of database and returns dataframe with details on missing commits.
@@ -1429,14 +1428,18 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
     """
     git_version = check_output(['git', '--version']).strip().split()[-1].decode("utf-8")
 
-    if int(re.search(r'(\d+)(?:\.\d+[a-z]*)+', git_version).groups()[0]) < 2:
+    parsed_git_version = re.search(r'(\d+)(?:\.\d+[a-z]*)+', git_version).groups()
+
+    if int(parsed_git_version[0]) < 2 or ((int(parsed_git_version[0]) == 2) and \
+       ((int(parsed_git_version[0]) == 2) and (int(parsed_git_version[1]) < 11)) or \
+       (int(parsed_git_version[1]) == 11) and (int(parsed_git_version[2]) == 0)):
         raise Exception("Your system is using git " + git_version + " which is not supported by " +
-                        "git2net. Please update to git >= 2.0.")
+                        "git2net. Please update to git >= 2.11.1")
 
     blame_options = _parse_blame_C(blame_C) + ['--show-number', '--line-porcelain']
     if blame_w:
         blame_options += ['-w']
-        
+
     extraction_settings = {'use_blocks': use_blocks,
                            'no_of_processes': no_of_processes,
                            'chunksize': chunksize,
@@ -1450,7 +1453,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                            'extract_merge_deletions': extract_merge_deletions}
 
     git_repo = pydriller.GitRepository(git_repo_dir)
-    
+
     if os.path.exists(sqlite_db_file):
         try:
             with sqlite3.connect(sqlite_db_file) as con:
@@ -1527,7 +1530,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
             con.commit()
             p_commits = set()
 
-            
+
     # commits in the currently mined repository
     if all_branches:
         c_commits = set(c.hash for c in
@@ -1556,14 +1559,14 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
             con.execute("UPDATE commits SET branches = (:branches) WHERE hash = (:hash)",
                            {'branches': ','.join(b), 'hash': c})
     con.commit()
-        
+
     if extraction_settings['no_of_processes'] > 1:
         _process_repo_parallel(git_repo_dir, sqlite_db_file, u_commits, extraction_settings)
     else:
         _process_repo_serial(git_repo_dir, sqlite_db_file, u_commits, extraction_settings)
-        
-        
-        
+
+
+
 def mine_github(github_url, git_repo_dir, sqlite_db_file, branch=None, **kwargs):
     """ Clones a repository from github and starts the mining process.
 
@@ -1584,7 +1587,7 @@ def mine_github(github_url, git_repo_dir, sqlite_db_file, branch=None, **kwargs)
     # github_url can either be provided as full url or as in form <USER>/<REPO>
     user_repo_pattern = r'^([^\/]*)\/([^\/]*)$'
     full_url_pattern = r'^https:\/\/github\.com\/([^\/]*)\/([^\/i]*)(\.git)?$'
-    
+
     match = re.match(user_repo_pattern, github_url)
     if match:
         git_owner = match.groups()[0]
@@ -1596,17 +1599,17 @@ def mine_github(github_url, git_repo_dir, sqlite_db_file, branch=None, **kwargs)
             git_owner = match.groups()[0]
             git_repo = match.groups()[1]
         else:
-            raise Exception('Invalid github_url provided.')    
-    
+            raise Exception('Invalid github_url provided.')
+
     # detect the correct directories to work with
     local_directory = '/'.join(git_repo_dir.split('/')[:-1])
     git_repo_folder = git_repo_dir.split('/')[-1]
-    
+
     if local_directory == '':
         local_directory = '.'
     if git_repo_folder == '':
         git_repo_folder = git_owner + '__' + git_repo
-    
+
     # check if the folder is empty if it exists
     if os.path.exists(git_repo_dir) and \
        (len(os.listdir(os.path.join(local_directory, git_repo_folder))) > 0):
@@ -1616,6 +1619,6 @@ def mine_github(github_url, git_repo_dir, sqlite_db_file, branch=None, **kwargs)
             git.Git(local_directory).clone(github_url, git_repo_folder, branch=branch)
         else:
             git.Git(local_directory).clone(github_url, git_repo_folder)
-    
+
     # mine the cloned repo
     mine_git_repo(git_repo_dir, sqlite_db_file, **kwargs)

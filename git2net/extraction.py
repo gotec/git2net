@@ -1428,7 +1428,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
     """
     git_version = check_output(['git', '--version']).strip().split()[-1].decode("utf-8")
 
-    parsed_git_version = re.search(r'(\d+)(?:\.\d+[a-z]*)+', git_version).groups()
+    parsed_git_version = re.search(r'(\d+)\.(\d+)\.(\d+)', git_version).groups()
 
     if int(parsed_git_version[0]) < 2 or ((int(parsed_git_version[0]) == 2) and \
        ((int(parsed_git_version[0]) == 2) and (int(parsed_git_version[1]) < 11)) or \

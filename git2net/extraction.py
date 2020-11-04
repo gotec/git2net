@@ -1426,7 +1426,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
     Returns:
         sqlite database will be written at specified location
     """
-    git_version = check_output(['git', '--version']).strip().split()[-1].decode("utf-8")
+    git_version = check_output(['git', '--version']).strip().decode("utf-8")
 
     parsed_git_version = re.search(r'(\d+)\.(\d+)\.(\d+)', git_version).groups()
 

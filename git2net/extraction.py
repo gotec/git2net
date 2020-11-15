@@ -1506,6 +1506,11 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                             "previously paused run with identical settings is required.")
     else:
         print("Found no database on provided path. Starting from scratch.")
+        try:
+            repo_url = git_repo.repo.remotes.origin.url
+        except:
+            repo_url = git_repo_dir
+        
         with sqlite3.connect(sqlite_db_file) as con:
             con.execute("""CREATE TABLE _metadata ('created with',
                                                    'repository',
@@ -1523,7 +1528,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                                 :method,
                                 :extract_text)""",
                         {'version': 'git2net ' + str(__version__),
-                         'repository': git_repo.repo.remotes.origin.url,
+                         'repository': repo_url,
                          'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                          'method': 'blocks' if use_blocks else 'lines',
                          'extract_text': str(extract_text)})

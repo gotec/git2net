@@ -1535,7 +1535,8 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
             con.commit()
             p_commits = set()
 
-
+    print('line 1538')
+            
     # commits in the currently mined repository
     if all_branches:
         c_commits = set(c.hash for c in
@@ -1543,6 +1544,9 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
     else:
         c_commits = set(c.hash for c in
                         pydriller.GitRepository(git_repo_dir).get_list_commits())
+        
+    print('line 1548')
+        
     if not commits:
         # unprocessed commits
         if all_branches:
@@ -1555,16 +1559,21 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
         commits = [git_repo.get_commit(h) for h in commits]
         u_commits = [c for c in commits if c.hash not in p_commits]
 
-    current_branch = git_repo.repo.active_branch.name
-    for c in p_commits.intersection(c_commits):
-        b = con.execute("SELECT branches FROM commits WHERE hash = (:hash)", {'hash': c}).fetchall()[0][0]
-        b = set(b.split(','))
-        if current_branch not in b:
-            b.add(current_branch)
-            con.execute("UPDATE commits SET branches = (:branches) WHERE hash = (:hash)",
-                           {'branches': ','.join(b), 'hash': c})
-    con.commit()
+    print('line 1562')
+        
+    if all_branches:
+        current_branch = git_repo.repo.active_branch.name
+        for c in p_commits.intersection(c_commits):
+            b = con.execute("SELECT branches FROM commits WHERE hash = (:hash)", {'hash': c}).fetchall()[0][0]
+            b = set(b.split(','))
+            if current_branch not in b:
+                b.add(current_branch)
+                con.execute("UPDATE commits SET branches = (:branches) WHERE hash = (:hash)",
+                               {'branches': ','.join(b), 'hash': c})
+        con.commit()
 
+    print('line 1575')
+    
     if extraction_settings['no_of_processes'] > 1:
         _process_repo_parallel(git_repo_dir, sqlite_db_file, u_commits, extraction_settings)
     else:

@@ -5,4 +5,4 @@ scipy
 python-levenshtein
 pathpy2>=2.2.0
 lizard
-pydriller>=1.15.0
+pydriller>=1.15.0,<=1.15.2

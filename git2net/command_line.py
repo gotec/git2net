@@ -104,13 +104,13 @@ def main():
     if not args.command:
         raise Exception('Requires command argument: "mine" or "graph".')
     
-    if args.commits:
+    if hasattr(args, 'commits') and args.commits:
         with open(args.commits, 'r') as f:
             args.commits = f.read().split('\n')
             args.commits = [x for x in args.commits if len(x) > 0]
     else:
         args.commits = []
-    if args.exclude:
+    if hasattr(args, 'exclude') and args.exclude:
         with open(args.exclude, 'r') as f:
             args.exclude = f.read().split('\n')
             args.exclude = [x for x in args.exclude if len(x) > 0]

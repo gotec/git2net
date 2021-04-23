@@ -42,10 +42,9 @@ def test_extract_edits_1(git_repo_dir):
     filename = 'first_lines.txt'
 
     extraction_settings = {'use_blocks': False,
-                           'blame_C': 'CCC4',
+                           'blame_options': ['-C', '-C', '-C4', '--show-number', '--line-porcelain'],
                            'extract_complexity': True,
                            'extract_text': True}
-    
     git_repo = pydriller.GitRepository(git_repo_dir)
     commit = git_repo.get_commit(commit_hash)
     for mod in commit.modifications:
@@ -64,7 +63,7 @@ def test_extract_edits_2(git_repo_dir):
     filename = 'first_lines.txt'
 
     extraction_settings = {'use_blocks': True,
-                           'blame_C': 'CCC4',
+                           'blame_options': ['-C', '-C', '-C4', '--show-number', '--line-porcelain'],
                            'extract_complexity': True,
                            'extract_text': True}
     
@@ -104,7 +103,7 @@ def test_process_commit(git_repo_dir):
     
     extraction_settings = {'use_blocks': False,
                            'exclude': [],
-                           'blame_C': '-C',
+                           'blame_options': ['-C', '--show-number', '--line-porcelain'],
                            'timeout': 0,
                            'max_modifications': 0,
                            'no_of_processes': 4,
@@ -142,6 +141,8 @@ def test_mine_git_repo(git_repo_dir, sqlite_db_file):
                           extract_merges=True, extract_complexity=True, extract_text=True)
     assert True
 
+def test_disambiguation(sqlite_db_file):
+    git2net.disambiguate_aliases_db(sqlite_db_file)
 
 def test_get_line_editing_paths(sqlite_db_file, git_repo_dir):
     paths, dag, node_info, edge_info = git2net.get_line_editing_paths(sqlite_db_file, git_repo_dir,
@@ -243,7 +244,7 @@ def test_process_commit_merge(git_repo_dir):
     
     extraction_settings = {'use_blocks': False,
                            'exclude': [],
-                           'blame_C': '-C',
+                           'blame_options': ['-C', '--show-number', '--line-porcelain'],
                            'timeout': 0,
                            'max_modifications': 0,
                            'no_of_processes': 4,
@@ -266,7 +267,7 @@ def test_process_commit_merge2(git_repo_dir):
     
     extraction_settings = {'use_blocks': False,
                            'exclude': [],
-                           'blame_C': '-C',
+                           'blame_options': ['-C', '--show-number', '--line-porcelain'],
                            'timeout': 0,
                            'max_modifications': 0,
                            'no_of_processes': 4,

@@ -318,6 +318,7 @@ def _parse_porcelain_blame(blame):
                 start_of_line_info = False
             elif entries[0] == 'filename':
                 filename = entries[1]
+    
     blame_info = pd.DataFrame(l)
     return blame_info
 
@@ -680,7 +681,7 @@ def _extract_edits(git_repo, commit, modification, extraction_settings):
             e['commit_hash'] = commit.hash
             e['modification_type'] = modification.change_type.name
             e['edit_type'] = edit.type
-
+            
             e.update(_get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_parent,
                                       blame_info_commit, extraction_settings))
 

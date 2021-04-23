@@ -15,8 +15,17 @@ import math
 import numpy as np
 import calendar
 
-def get_line_editing_paths(sqlite_db_file, git_repo_dir, commit_hashes=None, file_paths=None,
-                           with_start=False, merge_renaming=False):
+
+def _ensure_author_id_exists(sqlite_db_file):
+    with sqlite3.connect(sqlite_db_file) as con:
+        cur = con.cursor()
+        cols = [i[1] for i in cur.execute('PRAGMA table_info(commits)')]
+        if 'author_id' not in cols:
+            raise Exception("The author_id is not yet computed. To use author_id as identifier, please " + 
+                            "run git2net.disambiguate_aliases_db on the database before visualisation.")
+
+def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='author_id', commit_hashes=None,
+                           file_paths=None, with_start=False, merge_renaming=False):
     """ Returns line editing DAG as well as line editing paths.
 
         Node and edge infos set up to be expanded with future releases.
@@ -36,6 +45,9 @@ def get_line_editing_paths(sqlite_db_file, git_repo_dir, commit_hashes=None, fil
         edge_info: info on edge characteristics
     """
 
+    if author_identifier == 'author_id':
+        _ensure_author_id_exists(sqlite_db_file)
+    
     # Connect to provided database.
     con = sqlite3.connect(sqlite_db_file)
 
@@ -70,7 +82,24 @@ def get_line_editing_paths(sqlite_db_file, git_repo_dir, commit_hashes=None, fil
 
     # Extract required data from the provided database.
     print('Querying commits')
-    commits = pd.read_sql("""SELECT hash, author_name, author_date FROM commits""", con)
+    if author_identifier == 'author_id':
+        commits = pd.read_sql("""SELECT hash,
+                                        author_id as author_identifier,
+                                        author_date
+                                 FROM commits""", con)
+    elif author_identifier == 'author_name':
+        commits = pd.read_sql("""SELECT hash,
+                                        author_name as author_identifier,
+                                        author_date
+                                 FROM commits""", con)
+    elif author_identifier == 'author_email':
+        commits = pd.read_sql("""SELECT hash,
+                                        author_email as author_identifier,
+                                        author_date
+                                 FROM commits""", con)
+    else:
+        raise Exception("author_identifier must be from {'author_id', 'author_name', 'author_email'}.")
+    
     print('Querying edits')
     edits = pd.DataFrame()
     no_of_edits = pd.read_sql("""SELECT count(*) FROM edits""", con).iloc[0, 0]
@@ -90,8 +119,6 @@ def get_line_editing_paths(sqlite_db_file, git_repo_dir, commit_hashes=None, fil
                                       FROM edits""", con, chunksize=chunksize),
                             total = math.ceil(no_of_edits / chunksize)):
 
-
-
         # Filter edits table if only edits from specific commits are considered.
         if commit_hashes is not None:
             edits = edits.loc[[x in commit_hashes for x in edits.commit_hash], :]
@@ -109,13 +136,13 @@ def get_line_editing_paths(sqlite_db_file, git_repo_dir, commit_hashes=None, fil
         # Get author and date of deletions.
         edits = pd.merge(edits, commits, how='left', left_on='original_commit_deletion',
                                 right_on='hash').drop(['hash'], axis=1)
-        edits.rename(columns = {'author_name':'author_name_deletion',
+        edits.rename(columns = {'author_identifier':'author_identifier_deletion',
                                 'author_date': 'author_date_deletion'}, inplace = True)
 
         # Get author and date of additions.
         edits = pd.merge(edits, commits, how='left', left_on='original_commit_addition',
                                 right_on='hash').drop(['hash'], axis=1)
-        edits.rename(columns = {'author_name':'author_name_addition',
+        edits.rename(columns = {'author_identifier':'author_identifier_addition',
                                 'author_date': 'author_date_addition'}, inplace = True)
 
         # Get current author and date
@@ -294,7 +321,7 @@ def get_commit_editing_paths(sqlite_db_file, time_from=None, time_to=None, filen
     return paths, dag, node_info, edge_info
 
 
-def get_coediting_network(db_location, time_from=None, time_to=None):
+def get_coediting_network(sqlite_db_file, author_identifier='author_id', time_from=None, time_to=None):
     """ Returns coediting network containing links between authors who coedited at least one line of
         code within a given time window.
 
@@ -310,14 +337,36 @@ def get_coediting_network(db_location, time_from=None, time_to=None):
         node_info: info on node charactaristics
         edge_info: info on edge characteristics
     """
-
-    con = sqlite3.connect(db_location)
+    
+    if author_identifier == 'author_id':
+        _ensure_author_id_exists(sqlite_db_file)
+    
+    con = sqlite3.connect(sqlite_db_file)
     edits = pd.read_sql("""SELECT original_commit_deletion AS pre_commit,
                                   commit_hash AS post_commit,
                                   levenshtein_dist
                            FROM edits""", con).drop_duplicates()
-    commits = pd.read_sql("""SELECT hash, author_name, author_date, author_timezone
-                             FROM commits""", con)
+    
+    if author_identifier == 'author_id':
+        commits = pd.read_sql("""SELECT hash,
+                                        author_id as author_identifier,
+                                        author_date,
+                                        author_timezone
+                                 FROM commits""", con)
+    elif author_identifier == 'author_name':
+        commits = pd.read_sql("""SELECT hash,
+                                        author_name as author_identifier,
+                                        author_date,
+                                        author_timezone
+                                 FROM commits""", con)
+    elif author_identifier == 'author_email':
+        commits = pd.read_sql("""SELECT hash,
+                                        author_email as author_identifier,
+                                        author_date,
+                                        author_timezone
+                                 FROM commits""", con)
+    else:
+        raise Exception("author_identifier must be from {'author_id', 'author_name', 'author_email'}.")
 
     data = pd.merge(edits, commits, how='left', left_on='pre_commit', right_on='hash') \
                     .drop(['pre_commit', 'hash', 'author_date', 'author_timezone'], axis=1)
@@ -357,7 +406,7 @@ def get_coediting_network(db_location, time_from=None, time_to=None):
     return t, node_info, edge_info
 
 
-def get_coauthorship_network(sqlite_db_file, time_from=None, time_to=None):
+def get_coauthorship_network(sqlite_db_file, author_identifier='author_id', time_from=None, time_to=None):
     """ Returns coauthorship network containing links between authors who coedited at least one code
         file within a given time window.
 
@@ -374,14 +423,35 @@ def get_coauthorship_network(sqlite_db_file, time_from=None, time_to=None):
         edge_info: info on edge characteristics
     """
 
+    if author_identifier == 'author_id':
+        _ensure_author_id_exists(sqlite_db_file)
+    
     con = sqlite3.connect(sqlite_db_file)
     edits = pd.read_sql("""SELECT original_commit_deletion AS pre_commit,
                                   commit_hash AS post_commit,
                                   filename
                            FROM edits""", con)
-    commits = pd.read_sql("""SELECT hash, author_name, author_date AS time,
+    
+    if author_identifier == 'author_id':
+        commits = pd.read_sql("""SELECT hash,
+                                    author_id as author_identifier,
+                                    author_date AS time,
                                     author_timezone AS timezone
                              FROM commits""", con)
+    elif author_identifier == 'author_name':
+        commits = pd.read_sql("""SELECT hash,
+                                    author_name as author_identifier,
+                                    author_date AS time,
+                                    author_timezone AS timezone
+                             FROM commits""", con)
+    elif author_identifier == 'author_email':
+        commits = pd.read_sql("""SELECT hash,
+                                    author_email as author_identifier,
+                                    author_date AS time,
+                                    author_timezone AS timezone
+                             FROM commits""", con)
+    else:
+        raise Exception("author_identifier must be from {'author_id', 'author_name', 'author_email'}.")
 
     data_pre = pd.merge(edits, commits, how='left', left_on='pre_commit', right_on='hash') \
                     .drop(['pre_commit', 'post_commit', 'hash'], axis=1)
@@ -413,7 +483,7 @@ def get_coauthorship_network(sqlite_db_file, time_from=None, time_to=None):
 
     n = pp.Network()
     for file in data.filename.unique():
-        n.add_clique(set(data.loc[data.filename==file,'author_name']))
+        n.add_clique(set(data.loc[data.filename==file,'author_identifier']))
 
     # remove self loops
     for edge in n.edges:
@@ -423,7 +493,7 @@ def get_coauthorship_network(sqlite_db_file, time_from=None, time_to=None):
     return n, node_info, edge_info
 
 
-def get_bipartite_network(sqlite_db_file, time_from=None, time_to=None):
+def get_bipartite_network(sqlite_db_file, author_identifier='author_id', time_from=None, time_to=None):
     """ Returns temporal bipartite network containing time-stamped file-author relationships for
         given time window.
 
@@ -440,14 +510,34 @@ def get_bipartite_network(sqlite_db_file, time_from=None, time_to=None):
         edge_info: info on edge characteristics
     """
 
+    if author_identifier == 'author_id':
+        _ensure_author_id_exists(sqlite_db_file)
+    
     con = sqlite3.connect(sqlite_db_file)
     edits = pd.read_sql("""SELECT commit_hash AS post_commit,
                                   filename
                            FROM edits""", con).drop_duplicates()
 
-    commits = pd.read_sql("""SELECT hash, author_name, author_date AS time,
-                                    author_timezone as timezone
+    if author_identifier == 'author_id':
+        commits = pd.read_sql("""SELECT hash,
+                                    author_id as author_identifier,
+                                    author_date AS time,
+                                    author_timezone AS timezone
                              FROM commits""", con)
+    elif author_identifier == 'author_name':
+        commits = pd.read_sql("""SELECT hash,
+                                    author_name as author_identifier,
+                                    author_date AS time,
+                                    author_timezone AS timezone
+                             FROM commits""", con)
+    elif author_identifier == 'author_email':
+        commits = pd.read_sql("""SELECT hash,
+                                    author_email as author_identifier,
+                                    author_date AS time,
+                                    author_timezone AS timezone
+                             FROM commits""", con)
+    else:
+        raise Exception("author_identifier must be from {'author_id', 'author_name', 'author_email'}.")
 
     data = pd.merge(edits, commits, how='left', left_on='post_commit', right_on='hash') \
                         .drop(['post_commit', 'hash'], axis=1)
@@ -475,8 +565,8 @@ def get_bipartite_network(sqlite_db_file, time_from=None, time_to=None):
     t = pp.TemporalNetwork()
     for idx, row in data.iterrows():
         if (row.time >= time_from) and (row.time <= time_to):
-            t.add_edge(row['author_name'], row['filename'], row['time'], directed=True)
-            node_info['class'][row['author_name']] = 'author'
+            t.add_edge(row['author_identifier'], row['filename'], row['time'], directed=True)
+            node_info['class'][row['author_identifier']] = 'author'
             node_info['class'][row['filename']] = 'file'
 
     return t, node_info, edge_info

@@ -973,6 +973,15 @@ def _get_edited_file_paths_since_split(git_repo, commit):
     return edited_file_paths
 
 
+def _check_mailmap(name, email, git_repo):
+    test_str = '{} <{}>'.format(name, email)
+
+    out_str = git_repo.git.check_mailmap(test_str)
+    
+    name, email = re.findall("^(.*) <(.*)>$", out_str)[0]
+    return name, email
+
+
 def _process_commit(args):
     """ Extracts information on commit and all edits made with the commit.
 
@@ -994,13 +1003,21 @@ def _process_commit(args):
     alarm.start()
 
     try:
+        author_name, author_email = _check_mailmap(commit.author.name,
+                                                   commit.author.email,
+                                                   git_repo)
+
+        committer_name, committer_email = _check_mailmap(commit.committer.name,
+                                                         commit.committer.email,
+                                                         git_repo)
+
         # parse commit
         c = {}
         c['hash'] = commit.hash
-        c['author_email'] = commit.author.email
-        c['author_name'] = commit.author.name
-        c['committer_email'] = commit.committer.email
-        c['committer_name'] = commit.committer.name
+        c['author_email'] = author_email
+        c['author_name'] = author_name
+        c['committer_email'] = committer_email
+        c['committer_name'] = committer_name
         c['author_date'] = commit.author_date.strftime('%Y-%m-%d %H:%M:%S')
         c['committer_date'] = commit.committer_date.strftime('%Y-%m-%d %H:%M:%S')
         c['author_timezone'] = commit.author_timezone

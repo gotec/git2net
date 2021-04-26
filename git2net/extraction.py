@@ -974,11 +974,28 @@ def _get_edited_file_paths_since_split(git_repo, commit):
 
 
 def _check_mailmap(name, email, git_repo):
-    test_str = '{} <{}>'.format(name, email)
-
-    out_str = git_repo.git.check_mailmap(test_str)
+    """ Returns matching user from git .mailmap file if available. Returns input if user is not in
+        mailmap or mailmap is unavailable.
     
-    name, email = re.findall("^(.*) <(.*)>$", out_str)[0]
+    Args:
+        name: username
+        email: git email
+        git_repo: PyDriller GitRepository object
+
+    Returns:
+        name: corresponding username from mailmap
+        email: corresponding email from mailmap
+    """
+    test_str = '{} <{}>'.format(name, email)
+    out_str = git_repo.git.check_mailmap(test_str)
+
+    matches = re.findall("^(.*) <(.*)>$", out_str)
+    if len(matches) > 1:
+        raise Exception('Error in mailmap check. Please report on https://github.com/gotec/git2net.')
+    elif len(matches) == 1:
+        name, email = matches[0]
+    # else name and email remain the same as the ones passed
+        
     return name, email
 
 

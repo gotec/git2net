@@ -1143,6 +1143,11 @@ def _process_repo_serial(git_repo_dir, sqlite_db_file, commits, extraction_setti
                 result['commit'].to_sql('commits', con, if_exists='append', index=False)
 
 
+# suggestion by marco-c (github.com/ishepard/pydriller/issues/110)
+def _init(git_repo_dir, git_init_lock_):
+    global git_init_lock
+    git_init_lock = git_init_lock_
+                
 def _process_repo_parallel(git_repo_dir, sqlite_db_file, commits, extraction_settings):
     """ Processes all commits in a given git repository in a parallel manner.
 
@@ -1158,11 +1163,6 @@ def _process_repo_parallel(git_repo_dir, sqlite_db_file, commits, extraction_set
 
     args = [{'git_repo_dir': git_repo_dir, 'commit_hash': commit.hash, 'extraction_settings': extraction_settings}
             for commit in commits]
-
-    # suggestion by marco-c (github.com/ishepard/pydriller/issues/110)
-    def _init(git_repo_dir, git_init_lock_):
-        global git_init_lock
-        git_init_lock = git_init_lock_
 
     with multiprocessing.Pool(extraction_settings['no_of_processes'],
                               initializer=_init, initargs=(git_repo_dir,git_init_lock)) as p:

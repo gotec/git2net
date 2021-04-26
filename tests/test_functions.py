@@ -8,11 +8,11 @@ import os
 from datetime import datetime
 import sys
 
-@pytest.yield_fixture(scope="module")
+@pytest.fixture(scope="module")
 def git_repo_dir():
     yield 'test_repos/test_repo_1'
 
-@pytest.yield_fixture(scope="module")
+@pytest.fixture(scope="module")
 def sqlite_db_file():
     yield 'tests/test_repo_1.db'
 

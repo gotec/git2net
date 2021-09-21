@@ -392,15 +392,15 @@ def get_coediting_network(sqlite_db_file, author_identifier='author_id', time_fr
 
     node_info = {}
     edge_info = {}
-
+    
     t = pp.TemporalNetwork()
-    for idx, row in data.iterrows():
+    for row in data.itertuples():
         if (row.time >= time_from) and (row.time <= time_to) and not \
-           (row['post_author'] == row['pre_author']):
-            if not (pd.isnull(row['post_author']) or pd.isnull(row['pre_author'])):
-                t.add_edge(row['post_author'],
-                           row['pre_author'],
-                           row['time'],
+           (row.post_author == row.pre_author):
+            if not (pd.isnull(row.post_author) or pd.isnull(row.pre_author)):
+                t.add_edge(row.post_author,
+                           row.pre_author,
+                           row.time,
                            directed=True)
 
     return t, node_info, edge_info

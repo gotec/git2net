@@ -12,8 +12,6 @@ def disambiguate_aliases_db(sqlite_db_file, method='gambit', **quargs):
                                  FROM commits""", con).drop_duplicates()
         
     aliases = gambit.disambiguate_aliases(aliases, method=method, **quargs)
-
-    print(aliases)
     
     with sqlite3.connect(sqlite_db_file) as con:
         cur = con.cursor()

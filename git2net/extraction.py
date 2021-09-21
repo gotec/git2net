@@ -973,6 +973,32 @@ def _get_edited_file_paths_since_split(git_repo, commit):
     return edited_file_paths
 
 
+def _check_mailmap(name, email, git_repo):
+    """ Returns matching user from git .mailmap file if available. Returns input if user is not in
+        mailmap or mailmap is unavailable.
+    
+    Args:
+        name: username
+        email: git email
+        git_repo: PyDriller GitRepository object
+
+    Returns:
+        name: corresponding username from mailmap
+        email: corresponding email from mailmap
+    """
+    test_str = '{} <{}>'.format(name, email)
+    out_str = git_repo.git.check_mailmap(test_str)
+
+    matches = re.findall("^(.*) <(.*)>$", out_str)
+    if len(matches) > 1:
+        raise Exception('Error in mailmap check. Please report on https://github.com/gotec/git2net.')
+    elif len(matches) == 1:
+        name, email = matches[0]
+    # else name and email remain the same as the ones passed
+        
+    return name, email
+
+
 def _process_commit(args):
     """ Extracts information on commit and all edits made with the commit.
 
@@ -994,13 +1020,21 @@ def _process_commit(args):
     alarm.start()
 
     try:
+        author_name, author_email = _check_mailmap(commit.author.name,
+                                                   commit.author.email,
+                                                   git_repo)
+
+        committer_name, committer_email = _check_mailmap(commit.committer.name,
+                                                         commit.committer.email,
+                                                         git_repo)
+
         # parse commit
         c = {}
         c['hash'] = commit.hash
-        c['author_email'] = commit.author.email
-        c['author_name'] = commit.author.name
-        c['committer_email'] = commit.committer.email
-        c['committer_name'] = commit.committer.name
+        c['author_email'] = author_email
+        c['author_name'] = author_name
+        c['committer_email'] = committer_email
+        c['committer_name'] = committer_name
         c['author_date'] = commit.author_date.strftime('%Y-%m-%d %H:%M:%S')
         c['committer_date'] = commit.committer_date.strftime('%Y-%m-%d %H:%M:%S')
         c['author_timezone'] = commit.author_timezone
@@ -1143,6 +1177,11 @@ def _process_repo_serial(git_repo_dir, sqlite_db_file, commits, extraction_setti
                 result['commit'].to_sql('commits', con, if_exists='append', index=False)
 
 
+# suggestion by marco-c (github.com/ishepard/pydriller/issues/110)
+def _init(git_repo_dir, git_init_lock_):
+    global git_init_lock
+    git_init_lock = git_init_lock_
+                
 def _process_repo_parallel(git_repo_dir, sqlite_db_file, commits, extraction_settings):
     """ Processes all commits in a given git repository in a parallel manner.
 
@@ -1158,11 +1197,6 @@ def _process_repo_parallel(git_repo_dir, sqlite_db_file, commits, extraction_set
 
     args = [{'git_repo_dir': git_repo_dir, 'commit_hash': commit.hash, 'extraction_settings': extraction_settings}
             for commit in commits]
-
-    # suggestion by marco-c (github.com/ishepard/pydriller/issues/110)
-    def _init(git_repo_dir, git_init_lock_):
-        global git_init_lock
-        git_init_lock = git_init_lock_
 
     with multiprocessing.Pool(extraction_settings['no_of_processes'],
                               initializer=_init, initargs=(git_repo_dir,git_init_lock)) as p:

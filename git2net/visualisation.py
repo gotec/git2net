@@ -287,13 +287,18 @@ def get_commit_editing_paths(sqlite_db_file, time_from=None, time_to=None, filen
                           FROM edits
                           JOIN commits
                           ON edits.commit_hash = commits.hash""", con).drop_duplicates()
+    
     if filename is not None:
         data = data.loc[data.filename==filename, :]
 
-    data['time'] = (pd.to_datetime(data.time, format='%Y-%m-%d %H:%M:%S').values.astype(int)/1e9 - \
-                    data.timezone).astype(int)
+    data['time'] = [int(t/(10**9) - tz) for t, tz in 
+                        zip(pd.to_datetime(data.time, format='%Y-%m-%d %H:%M:%S').view('int64'),
+                            data.timezone)]
 
     data = data.drop(['timezone'], axis=1)
+
+    print('hello world')
+    print(data)
 
     if time_from == None:
         time_from = min(data.time)
@@ -303,6 +308,9 @@ def get_commit_editing_paths(sqlite_db_file, time_from=None, time_to=None, filen
         time_to = max(data.time)
     else:
         time_to = int(calendar.timegm(time_to.timetuple()))
+
+    print(time_from)
+    print(time_to)
 
     node_info = {}
     edge_info = {}
@@ -376,8 +384,9 @@ def get_coediting_network(sqlite_db_file, author_identifier='author_id', time_fr
                     .drop(['post_commit', 'hash'], axis=1)
     data.columns = ['levenshtein_dist', 'pre_author', 'post_author', 'time', 'timezone']
 
-    data['time'] = (pd.to_datetime(data.time, format='%Y-%m-%d %H:%M:%S').values.astype(int)/1e9 - \
-                    data.timezone).astype(int)
+    data['time'] = [int(t/(10**9) - tz) for t, tz in 
+                        zip(pd.to_datetime(data.time, format='%Y-%m-%d %H:%M:%S').view('int64'),
+                            data.timezone)]
 
     data = data[['pre_author', 'post_author', 'time', 'levenshtein_dist']]
 

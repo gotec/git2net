@@ -23,7 +23,11 @@ def _ensure_author_id_exists(sqlite_db_file):
         if 'author_id' not in cols:
             raise Exception("The author_id is not yet computed. To use author_id as identifier, please " + 
                             "run git2net.disambiguate_aliases_db on the database before visualisation.")
-
+        elif pd.isnull(pd.read_sql('''SELECT author_id FROM commits''', con).author_id).sum() > 0:
+            raise Exception("The author_id is missing entries. To use author_id as identifier, please " + 
+                            "rerun git2net.disambiguate_aliases_db on the database before visualisation.")
+                
+                
 def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='author_id', commit_hashes=None,
                            file_paths=None, with_start=False, merge_renaming=False):
     """ Returns line editing DAG as well as line editing paths.

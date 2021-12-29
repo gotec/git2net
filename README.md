@@ -1,5 +1,6 @@
 [![Open Tutorial in Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/gotec/git2net/HEAD?labpath=TUTORIAL.ipynb)
 [![Open Tutorial In Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gotec/git2net/blob/master/TUTORIAL.ipynb)
+[![View tutorial on nbviewer](https://img.shields.io/badge/View%20on-nbviewer-informational)](https://nbviewer.org/github/gotec/git2net/blob/master/TUTORIAL.ipynb)
 
 # git2net
 

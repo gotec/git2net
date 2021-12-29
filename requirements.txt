@@ -1,0 +1,9 @@
+pygit2
+sqlite3
+pathpy
+git2net
+pandas
+matplotlib
+seaborn
+collections
+datetime

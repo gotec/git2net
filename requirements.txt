@@ -1,5 +1,5 @@
 pygit2
-sqlite3
+pysqlite3
 pathpy
 git2net
 pandas

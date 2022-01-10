@@ -1,8 +1,0 @@
-pygit2
-pysqlite3
-pathpy
-git2net
-pandas
-matplotlib
-seaborn
-DateTime

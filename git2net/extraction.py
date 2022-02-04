@@ -49,7 +49,7 @@ class Alarm(threading.Thread):
     def __init__(self, timeout):
         threading.Thread.__init__ (self)
         self.timeout = timeout
-        self.setDaemon (True)
+        self.daemon = True
 
     def run(self):
         if self.timeout > 0:
@@ -1089,10 +1089,10 @@ def _process_commit(args):
                         modification_info['old_path'] = edited_file_path
                         modification_info['modification_type'] = 'merge_self_accept'
 
-                        df_edits = df_edits.append(_extract_edits_merge(git_repo, commit,
-                                                        modification_info,
-                                                        args['extraction_settings']),
-                                                ignore_index=True, sort=True)
+                        df_edits = pd.concat([df_edits,
+                                              _extract_edits_merge(git_repo, commit, modification_info, 
+                                                                   args['extraction_settings'])],
+                                             axis=0, ignore_index=True, sort=True)
                     except GitCommandError:
                         # A GitCommandError occurs if the file was deleted. In this case it
                         # currently has no content.
@@ -1111,10 +1111,10 @@ def _process_commit(args):
                                 modification_info['lines_of_code_in_file'] = 0
                             modification_info['modification_type'] = 'merge_self_accept'
 
-                            df_edits = df_edits.append(_extract_edits_merge(git_repo, commit,
-                                                        modification_info,
-                                                        args['extraction_settings']),
-                                                    ignore_index=True, sort=True)
+                            df_edits = pd.concat([df_edits,
+                                                  _extract_edits_merge(git_repo, commit, modification_info,
+                                                                       args['extraction_settings'])],
+                                                 axis=0, ignore_index=True, sort=True)
 
         else:
             if (args['extraction_settings']['max_modifications'] > 0) and \
@@ -1133,12 +1133,11 @@ def _process_commit(args):
                     if not exclude_file and modification.old_path:
                         if modification.old_path.startswith(x + os.sep):
                             exclude_file = True
-                if not exclude_file:
-                    df_edits = df_edits.append(_extract_edits(git_repo, commit, modification,
-                                                              args['extraction_settings']),
-                                            ignore_index=True, sort=True)
-
-
+                if not exclude_file:                    
+                    df_edits = pd.concat([df_edits,
+                                          _extract_edits(git_repo, commit, modification, args['extraction_settings'])],
+                                         axis=0, ignore_index=True, sort=True)
+                    
         df_commit = pd.DataFrame(c, index=[0])
 
         extracted_result = {'commit': df_commit, 'edits': df_edits}

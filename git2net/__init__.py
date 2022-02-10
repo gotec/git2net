@@ -3,7 +3,7 @@ An OpenSource Python package for the extraction of fine-grained
 and time-stamped co-editing networks from git repositories.
 """
 
-#from importlib.metadata import version
+from importlib.metadata import version
 
 __author__ = "Christoph Gote"
 __email__ = "cgote@ethz.ch"

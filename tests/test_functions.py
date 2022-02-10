@@ -18,6 +18,10 @@ def sqlite_db_file():
 
 
 def test_get_commit_dag(git_repo_dir):
+    print('rootdir', [f for f in listdir('.')])
+    print('rootdir-1', [f for f in listdir('../.')])
+    print('test_repos', [f for f in listdir('../test_repos')])
+    
     dag = git2net.get_commit_dag(git_repo_dir)
     expected_edges = [('e4448e8', 'f343ed5'), ('f343ed5', '6b531fc'), ('6b531fc', 'b17c2c3'),
                       ('b17c2c3', '2b00f48'), ('2b00f48', '59da499'), ('2b00f48', 'b21583e'),

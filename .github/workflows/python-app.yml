@@ -33,9 +33,7 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Unzip test repository
       run: |
-	cd test_repos
-        unzip test_repo_1.zip
-	cd ..
+        unzip test_repos/test_repo_1.zip -d test_repos
     - name: Test with pytest
       run: |
         pytest

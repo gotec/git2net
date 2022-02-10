@@ -10,7 +10,7 @@ import sys
 
 @pytest.fixture(scope="module")
 def git_repo_dir():
-    yield '../test_repos/test_repo_1'
+    yield 'test_repos/test_repo_1'
 
 @pytest.fixture(scope="module")
 def sqlite_db_file():
@@ -19,8 +19,8 @@ def sqlite_db_file():
 
 def test_get_commit_dag(git_repo_dir):
     print('rootdir', [f for f in os.listdir('.')])
-    print('rootdir-1', [f for f in os.listdir('../.')])
-    print('test_repos', [f for f in os.listdir('../test_repos')])
+    print('rootdir-1', [f for f in os.listdir('test_repos')])
+    print('test_repos', [f for f in os.listdir('test_repos/test_repo_1')])
     
     dag = git2net.get_commit_dag(git_repo_dir)
     expected_edges = [('e4448e8', 'f343ed5'), ('f343ed5', '6b531fc'), ('6b531fc', 'b17c2c3'),

@@ -31,8 +31,10 @@ def test_get_commit_dag(git_repo_dir):
                       ('4b5f698', 'dcf060d'), ('deff6c8', 'dcf060d'), ('dcf060d', '5606e82'),
                       ('5606e82', '1adc153'), ('5606e82', 'e8be9c6'), ('e8be9c6', '97b5e43'),
                       ('1adc153', '97b5e43'), ('97b5e43', '1c038ed'), ('1c038ed', '94a9da2'),
-                      ('94a9da2', '83214bc')]
+                      ('94a9da2', '83214bc'), ('83214bc', '82351f1'), ('83214bc', 'e6172fd'),
+                      ('e6172fd', 'a1b3307'), ('82351f1', 'a1b3307')]
     dag.topsort()
+    
     assert list(dag.edges.keys()) == expected_edges
     assert dag.is_acyclic
 
@@ -156,8 +158,8 @@ def test_get_commit_editing_paths_1(sqlite_db_file):
     paths, dag, node_info, edge_info = git2net.get_commit_editing_paths(sqlite_db_file)
 
     assert len(dag.isolate_nodes()) == 0
-    assert len(dag.nodes) == 31
-    assert len(dag.successors[None]) == 10
+    assert len(dag.nodes) == 34
+    assert len(dag.successors[None]) == 11
 
 
 def test_get_commit_editing_paths_2(sqlite_db_file):

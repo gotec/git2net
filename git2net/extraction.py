@@ -741,7 +741,7 @@ def _extract_edits_merge(git_repo, commit, modification_info, extraction_setting
                              'type': 'binary_file_change'}, index=[0])
 
         edits_info = pd.DataFrame()
-        for _, edit in edits.iterrows():
+        for _, edit in edits.iterrows():            
             e = {}
             e['commit_hash'] = commit.hash
             e['edit_type'] = edit.type
@@ -752,9 +752,8 @@ def _extract_edits_merge(git_repo, commit, modification_info, extraction_setting
             e.update(_get_edit_details(edit, commit, deleted_lines, added_lines, blame_info_parent,
                                           blame_info_commit, extraction_settings))
 
-
-
-            edits_info = edits_info.append(e, ignore_index=True, sort=False)
+            edits_info = pd.concat([edits_info, pd.DataFrame([e])], ignore_index=True, sort=False)
+                                    
         return edits_info
     else:
         parent_blames = []

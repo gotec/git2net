@@ -16,7 +16,6 @@ import numpy as np
 from scipy.stats import entropy
 
 import pydriller as pydriller
-from pydriller.git_repository import GitCommandError
 from Levenshtein import distance as lev_dist
 import datetime
 
@@ -26,6 +25,7 @@ import lizard
 import sys
 import collections
 import git
+from git.exc import GitCommandError
 
 #from contextlib import closing
 
@@ -252,7 +252,7 @@ def get_commit_dag(git_repo_dir):
     Returns:
         dag: dag linking successive commits in the same branch
     """
-    git_repo = pydriller.GitRepository(git_repo_dir)
+    git_repo = pydriller.Git(git_repo_dir)
     commits = [x.hash[0:7] for x in git_repo.get_list_commits()]
     dag = pp.DAG()
     for node in commits:
@@ -568,9 +568,9 @@ def _extract_edits(git_repo, commit, modification, extraction_settings):
     """ Returns dataframe with metadata on edits made in a given modification.
 
     Args:
-        git_repo: pydriller GitRepository object
+        git_repo: pydriller Git object
         commit: pydriller Commit object
-        modification: pydriller Modification object
+        modification: pydriller ModificationFile object
         extraction_settings: settings for the extraction
 
     Returns:
@@ -642,15 +642,15 @@ def _extract_edits(git_repo, commit, modification, extraction_settings):
         if not binary_file:
             if len(deleted_lines) > 0:
                 assert len(commit.parents) == 1
-                blame_parent = git_repo.git.blame(commit.parents[0],
-                                                  extraction_settings['blame_options'],
-                                                  modification.old_path)
+                blame_parent = git.Git(str(git_repo.path)).blame(commit.parents[0],
+                                                                 extraction_settings['blame_options'],
+                                                                 modification.old_path)
                 blame_info_parent = _parse_porcelain_blame(blame_parent)
 
             if len(added_lines) > 0:
-                blame_commit = git_repo.git.blame(commit.hash,
-                                                  extraction_settings['blame_options'],
-                                                  modification.new_path)
+                blame_commit = git.Git(str(git_repo.path)).blame(commit.hash,
+                                                                 extraction_settings['blame_options'],
+                                                                 modification.new_path)
                 blame_info_commit = _parse_porcelain_blame(blame_commit)
 
     except GitCommandError:
@@ -675,8 +675,8 @@ def _extract_edits(git_repo, commit, modification, extraction_settings):
                 if extraction_settings['extract_complexity']:
                     e['cyclomatic_complexity_of_file'] = modification.complexity
                     e['lines_of_code_in_file'] = modification.nloc
-                e['total_added_lines'] = modification.added
-                e['total_removed_lines'] = modification.removed
+                e['total_added_lines'] = modification.added_lines
+                e['total_removed_lines'] = modification.deleted_lines
             e['filename'] = modification.filename
             e['commit_hash'] = commit.hash
             e['modification_type'] = modification.change_type.name
@@ -695,9 +695,9 @@ def _extract_edits_merge(git_repo, commit, modification_info, extraction_setting
     """ Returns dataframe with metadata on edits made in a given modification for merge commits.
 
     Args:
-        git_repo: pydriller GitRepository object
+        git_repo: pydriller Git object
         commit: pydriller Commit object
-        modification_info: information on the modification as stored in a pydriller Modification.
+        modification_info: information on the modification as stored in a pydriller ModificationFile.
         extraction_settings: settings for the extraction
 
     Returns:
@@ -709,15 +709,15 @@ def _extract_edits_merge(git_repo, commit, modification_info, extraction_setting
     #   2. Changes made prior to the merge are replaced with new edits.
     # To obtain the state of the file before merging, get blame is executed on all parent commits.
     try:
-        file_content = git_repo.git.show('{}:{}'.format(commit.hash, modification_info['new_path']))
+        file_content = git.Git(str(git_repo.path)).show('{}:{}'.format(commit.hash, modification_info['new_path']))
     except GitCommandError:
         file_content = ''
 
     file_content_parents = []
     for parent in commit.parents:
         try:
-            file_content_parents.append(git_repo.git.show('{}:{}'.format(parent,
-                                                            modification_info['old_path'])))
+            file_content_parents.append(git.Git(str(git_repo.path)).show('{}:{}'.format(parent,
+                                                                             modification_info['old_path'])))
         except GitCommandError:
             file_content_parents.append('')
 
@@ -759,9 +759,9 @@ def _extract_edits_merge(git_repo, commit, modification_info, extraction_setting
         parent_blames = []
         for parent in commit.parents:
             try:
-                parent_blame = git_repo.git.blame(parent,
-                                                  extraction_settings['blame_options'],
-                                                  modification_info['old_path'])
+                parent_blame = git.Git(str(git_repo.path)).blame(parent,
+                                                                 extraction_settings['blame_options'],
+                                                                 modification_info['old_path'])
 
                 if len(parent_blame) > 0:
                     parent_blame = _parse_porcelain_blame(parent_blame).rename(
@@ -786,9 +786,9 @@ def _extract_edits_merge(git_repo, commit, modification_info, extraction_setting
 
     # Then, the current state of the file is obtained by executing git blame on the current commit.
     try:
-        current_blame = git_repo.git.blame(commit.hash,
-                                           extraction_settings['blame_options'],
-                                           modification_info['new_path'])
+        current_blame = git.Git(str(git_repo.path)).blame(commit.hash,
+                                                          extraction_settings['blame_options'],
+                                                          modification_info['new_path'])
 
         if len(current_blame) > 0:
             current_blame = _parse_porcelain_blame(current_blame).rename(
@@ -887,7 +887,7 @@ def _get_edited_file_paths_since_split(git_repo, commit):
         relevant for the merge.
 
     Args:
-        git_repo: pydriller GitRepository object
+        git_repo: pydriller Git object
         commit: pydriller Commit object
 
     Returns:
@@ -961,9 +961,9 @@ def _get_edited_file_paths_since_split(git_repo, commit):
     edited_file_paths = []
     for node in dag.nodes:
         edited_file_paths += [modification.new_path for modification
-                              in git_repo.get_commit(node).modifications]
+                              in git_repo.get_commit(node).modified_files]
         edited_file_paths += [modification.old_path for modification
-                              in git_repo.get_commit(node).modifications]
+                              in git_repo.get_commit(node).modified_files]
 
     edited_file_paths = set(edited_file_paths)
     if None in edited_file_paths:
@@ -979,15 +979,15 @@ def _check_mailmap(name, email, git_repo):
     Args:
         name: username
         email: git email
-        git_repo: PyDriller GitRepository object
+        git_repo: PyDriller Git object
 
     Returns:
         name: corresponding username from mailmap
         email: corresponding email from mailmap
     """
     test_str = '{} <{}>'.format(name, email)
-    out_str = git_repo.git.check_mailmap(test_str)
-
+    out_str = git.Git(str(git_repo.path)).check_mailmap(test_str)
+    
     matches = re.findall("^(.*) <(.*)>$", out_str)
     if len(matches) > 1:
         raise Exception('Error in mailmap check. Please report on https://github.com/gotec/git2net.')
@@ -1012,7 +1012,7 @@ def _process_commit(args):
         extracted_result: dict containing two dataframes with information of commit and edits
     """
     with git_init_lock:
-        git_repo = pydriller.GitRepository(args['git_repo_dir'])
+        git_repo = pydriller.Git(args['git_repo_dir'])
         commit = git_repo.get_commit(args['commit_hash'])
 
     alarm = Alarm(args['extraction_settings']['timeout'])
@@ -1038,7 +1038,7 @@ def _process_commit(args):
         c['committer_date'] = commit.committer_date.strftime('%Y-%m-%d %H:%M:%S')
         c['author_timezone'] = commit.author_timezone
         c['committer_timezone'] = commit.committer_timezone
-        c['no_of_modifications'] = len(commit.modifications)
+        c['no_of_modifications'] = len(commit.modified_files)
         c['commit_message_len'] = len(commit.msg)
         if args['extraction_settings']['extract_text']:
             c['commit_message'] = commit.msg.encode('utf8','surrogateescape').decode('utf8','replace')
@@ -1054,7 +1054,7 @@ def _process_commit(args):
             # Git does not create a modification if own changes are accpeted during a merge.
             # Therefore, the edited files are extracted manually.
             edited_file_paths = {f for p in commit.parents for f in
-                                 git_repo.git.diff(commit.hash, p, '--name-only').split('\n')}
+                                 git.Git(str(git_repo.path)).diff(commit.hash, p, '--name-only').split('\n')}
 
             if (args['extraction_settings']['max_modifications'] > 0) and \
                (len(edited_file_paths) > args['extraction_settings']['max_modifications']):
@@ -1070,8 +1070,8 @@ def _process_commit(args):
                 if not exclude_file:
                     modification_info = {}
                     try:
-                        file_content = git_repo.git.show('{}:{}'.format(commit.hash,
-                                                                edited_file_path))
+                        file_content = git.Git(str(git_repo.path)).show('{}:{}'.format(commit.hash,
+                                                                                        edited_file_path))
 
                         if is_binary_file(edited_file_path, file_content):
                             if args['extraction_settings']['extract_complexity']:
@@ -1097,7 +1097,7 @@ def _process_commit(args):
                         # currently has no content.
 
                         # Get filenames from all modifications in merge commit.
-                        paths = [m.old_path for m in commit.modifications]
+                        paths = [m.old_path for m in commit.modified_files]
 
                         # Analyse changes if modification was recorded. Else, the deletions were
                         # made before the merge.
@@ -1117,12 +1117,12 @@ def _process_commit(args):
 
         else:
             if (args['extraction_settings']['max_modifications'] > 0) and \
-               (len(commit.modifications) > args['extraction_settings']['max_modifications']):
+               (len(commit.modified_files) > args['extraction_settings']['max_modifications']):
                 print('Commit exceeding max_modifications: ', commit.hash)
                 extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
                 return extracted_result
 
-            for modification in commit.modifications:
+            for modification in commit.modified_files:
                 exclude_file = False
                 for x in args['extraction_settings']['exclude']:
                     if modification.new_path:
@@ -1162,7 +1162,7 @@ def _process_repo_serial(git_repo_dir, sqlite_db_file, commits, extraction_setti
         sqlite database will be written at specified location
     """
 
-    git_repo = pydriller.GitRepository(git_repo_dir)
+    git_repo = pydriller.Git(git_repo_dir)
 
     for commit in tqdm(commits, desc='Serial'):
         args = {'git_repo_dir': git_repo_dir, 'commit_hash': commit.hash, 'extraction_settings': extraction_settings}
@@ -1221,11 +1221,11 @@ def identify_file_renaming(git_repo_dir):
     """
 
     # TODO: Consider corner case where file is renamed and new file with old name is created.
-    git_repo = pydriller.GitRepository(git_repo_dir)
+    git_repo = pydriller.Git(git_repo_dir)
 
     dag = pp.DAG()
     for commit in tqdm(list(git_repo.get_list_commits()), desc='Creating DAG'):
-        for modification in commit.modifications:
+        for modification in commit.modified_files:
 
             if (modification.new_path not in dag.nodes) and \
                (modification.old_path == modification.new_path) and \
@@ -1260,11 +1260,11 @@ def get_unified_changes(git_repo_dir, commit_hash, file_path):
     Returns:
         df: pandas dataframe listing changes made to file in commit
     """
-    git_repo = pydriller.GitRepository(git_repo_dir)
+    git_repo = pydriller.Git(git_repo_dir)
     commit = git_repo.get_commit(commit_hash)
 
     # Select the correct modifictaion.
-    for modification in commit.modifications:
+    for modification in commit.modified_files:
         if modification.new_path == file_path:
             break
 
@@ -1327,7 +1327,7 @@ def check_mining_complete(git_repo_dir, sqlite_db_file, commits=[], all_branches
     Returns:
         True if all commits are included in the database, otherwise False
     """
-    git_repo = pydriller.GitRepository(git_repo_dir)
+    git_repo = pydriller.Git(git_repo_dir)
     if os.path.exists(sqlite_db_file):
         try:
             with sqlite3.connect(sqlite_db_file) as con:
@@ -1365,7 +1365,7 @@ def mining_state_summary(git_repo_dir, sqlite_db_file, all_branches=False):
     Returns:
         dataframe with details on missing commits
     """
-    git_repo = pydriller.GitRepository(git_repo_dir)
+    git_repo = pydriller.Git(git_repo_dir)
     if os.path.exists(sqlite_db_file):
         try:
             with sqlite3.connect(sqlite_db_file) as con:
@@ -1405,10 +1405,10 @@ def mining_state_summary(git_repo_dir, sqlite_db_file, all_branches=False):
 
         if c.merge:
             u_commit_info['modifications'].append(len({f for p in c.parents for f in
-                                        git_repo.git.diff(c.hash, p, '--name-only').split('\n')}))
-            #print(c.modifications)
+                                        git.Git(str(git_repo.path)).diff(c.hash, p, '--name-only').split('\n')}))
+            #print(c.modified_files)
         else:
-            u_commit_info['modifications'].append(len(c.modifications))
+            u_commit_info['modifications'].append(len(c.modified_files))
 
         try:
             u_commit_info['author_name'].append(c.author.name)
@@ -1485,7 +1485,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                            'extract_merges': extract_merges,
                            'extract_merge_deletions': extract_merge_deletions}
 
-    git_repo = pydriller.GitRepository(git_repo_dir)
+    git_repo = pydriller.Git(git_repo_dir)
 
     if os.path.exists(sqlite_db_file):
         try:
@@ -1507,10 +1507,10 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                         p_commits = set()
                     if all_branches:
                         c_commits = set(c.hash for c in
-                                        pydriller.GitRepository(git_repo_dir).get_list_commits(all=True))
+                                        pydriller.Git(git_repo_dir).get_list_commits(all=True))
                     else:
                         c_commits = set(c.hash for c in
-                                        pydriller.GitRepository(git_repo_dir).get_list_commits())
+                                        pydriller.Git(git_repo_dir).get_list_commits())
                     if not p_commits.issubset(c_commits):
                         if prev_repository != git_repo.repo.remotes.origin.url:
                             raise Exception("Found a database that was created with identical " +
@@ -1571,10 +1571,10 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
     # commits in the currently mined repository
     if all_branches:
         c_commits = set(c.hash for c in
-                        pydriller.GitRepository(git_repo_dir).get_list_commits(all=True))
+                        pydriller.Git(git_repo_dir).get_list_commits(all=True))
     else:
         c_commits = set(c.hash for c in
-                        pydriller.GitRepository(git_repo_dir).get_list_commits())
+                        pydriller.Git(git_repo_dir).get_list_commits())
                 
     if not commits:
         # unprocessed commits

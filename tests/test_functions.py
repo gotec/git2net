@@ -47,9 +47,9 @@ def test_extract_edits_1(git_repo_dir):
                            'blame_options': ['-C', '-C', '-C4', '--show-number', '--line-porcelain'],
                            'extract_complexity': True,
                            'extract_text': True}
-    git_repo = pydriller.GitRepository(git_repo_dir)
+    git_repo = pydriller.Git(git_repo_dir)
     commit = git_repo.get_commit(commit_hash)
-    for mod in commit.modifications:
+    for mod in commit.modified_files:
         if mod.filename == filename:
             df = git2net.extraction._extract_edits(git_repo, commit, mod, extraction_settings)
             
@@ -69,10 +69,10 @@ def test_extract_edits_2(git_repo_dir):
                            'extract_complexity': True,
                            'extract_text': True}
     
-    git_repo = pydriller.GitRepository(git_repo_dir)
+    git_repo = pydriller.Git(git_repo_dir)
     commit = git_repo.get_commit(commit_hash)
     df = None
-    for mod in commit.modifications:
+    for mod in commit.modified_files:
         if mod.filename == filename:
             df = git2net.extraction._extract_edits(git_repo, commit, mod, extraction_settings)
     assert len(df) == 1
@@ -85,9 +85,9 @@ def test_identify_edits(git_repo_dir):
 
     extraction_settings = {'use_blocks': False}
     
-    git_repo = pydriller.GitRepository(git_repo_dir)
+    git_repo = pydriller.Git(git_repo_dir)
     commit = git_repo.get_commit(commit_hash)
-    for x in commit.modifications:
+    for x in commit.modified_files:
         if x.filename == filename:
             mod = x
 

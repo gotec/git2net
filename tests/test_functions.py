@@ -14,7 +14,7 @@ def git_repo_dir():
 
 @pytest.fixture(scope="module")
 def sqlite_db_file():
-    yield '../tests/test_repo_1.db'
+    yield 'tests/test_repo_1.db'
 
 
 def test_get_commit_dag(git_repo_dir):

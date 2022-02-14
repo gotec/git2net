@@ -2,17 +2,18 @@ import gambit
 import sqlite3
 import pandas as pd
 
+
 def disambiguate_aliases_db(sqlite_db_file, method='gambit', **quargs):
-    
+
     # thresh=.95, sim='lev'
-    
+
     with sqlite3.connect(sqlite_db_file) as con:
         aliases = pd.read_sql("""SELECT author_name AS alias_name,
                                         author_email AS alias_email
                                  FROM commits""", con).drop_duplicates()
-        
+
     aliases = gambit.disambiguate_aliases(aliases, method=method, **quargs)
-    
+
     with sqlite3.connect(sqlite_db_file) as con:
         cur = con.cursor()
 

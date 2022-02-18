@@ -43,7 +43,7 @@ def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='auth
         merge_renaming: bool, determines if file renaming is considered
 
     Returns:
-        paths: line editing pahts, pathpy Path object
+        paths: line editing paths, pathpy Path object
         dag: line editing directed acyclic graph, pathpy DAG object
         node_info: info on node charactaristics
         edge_info: info on edge characteristics
@@ -263,9 +263,9 @@ def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='auth
     return paths, dag, node_info, edge_info
 
 
-def get_commit_editing_paths(sqlite_db_file, time_from=None, time_to=None, filename=None):
+def get_commit_editing_dag(sqlite_db_file, time_from=None, time_to=None, filename=None):
     """ Returns DAG of commits where an edge between commit A and B indicates that lines written in
-        commit A where changes in commit B. Further outputs editing paths extracted from the DAG.
+        commit A were changed in commit B. Further outputs editing paths extracted from the DAG.
 
         Node and edge infos set up to be expanded with future releases.
 
@@ -276,7 +276,6 @@ def get_commit_editing_paths(sqlite_db_file, time_from=None, time_to=None, filen
         filename: filter to obtain only commits editing a certain file
 
     Returns:
-        paths: pathpy path object capturing editing paths
         dag: pathpy dag object linking commits
         node_info: info on node charactaristics
         edge_info: info on edge characteristics
@@ -301,9 +300,6 @@ def get_commit_editing_paths(sqlite_db_file, time_from=None, time_to=None, filen
 
     data = data.drop(['timezone'], axis=1)
 
-    print('hello world')
-    print(data)
-
     if time_from == None:
         time_from = min(data.time)
     else:
@@ -312,9 +308,6 @@ def get_commit_editing_paths(sqlite_db_file, time_from=None, time_to=None, filen
         time_to = max(data.time)
     else:
         time_to = int(calendar.timegm(time_to.timetuple()))
-
-    print(time_from)
-    print(time_to)
 
     node_info = {}
     edge_info = {}
@@ -328,9 +321,7 @@ def get_commit_editing_paths(sqlite_db_file, time_from=None, time_to=None, filen
 
     assert dag.is_acyclic is True
 
-    paths = pp.path_extraction.paths_from_dag(dag)
-
-    return paths, dag, node_info, edge_info
+    return dag, node_info, edge_info
 
 
 def get_coediting_network(sqlite_db_file, author_identifier='author_id', time_from=None, time_to=None):

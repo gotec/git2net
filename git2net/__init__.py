@@ -19,7 +19,7 @@ from .extraction import mining_state_summary
 from .extraction import check_mining_complete
 from .disambiguation import disambiguate_aliases_db
 from .visualisation import get_line_editing_paths
-from .visualisation import get_commit_editing_paths
+from .visualisation import get_commit_editing_dag
 from .visualisation import get_coediting_network
 from .visualisation import get_coauthorship_network
 from .visualisation import get_bipartite_network

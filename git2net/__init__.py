@@ -3,11 +3,11 @@ An OpenSource Python package for the extraction of fine-grained
 and time-stamped co-editing networks from git repositories.
 """
 
-from importlib.metadata import version
+from pkg_resources import get_distribution
 
 __author__ = "Christoph Gote"
 __email__ = "cgote@ethz.ch"
-__version__ = version('git2net')
+__version__ = get_distribution('git2net').version
 
 from .extraction import mine_git_repo
 from .extraction import mine_github

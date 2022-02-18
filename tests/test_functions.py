@@ -156,38 +156,38 @@ def test_get_line_editing_paths(sqlite_db_file, git_repo_dir):
     assert len(dag.isolate_nodes()) == 0
 
 
-def test_get_commit_editing_paths_1(sqlite_db_file):
+def test_get_commit_editing_dag_1(sqlite_db_file):
     sqlite_db_file = 'tests/test_repo_1.db'
 
-    paths, dag, node_info, edge_info = git2net.get_commit_editing_paths(sqlite_db_file)
+    dag, node_info, edge_info = git2net.get_commit_editing_dag(sqlite_db_file)
 
     assert len(dag.isolate_nodes()) == 0
     assert len(dag.nodes) == 34
     assert len(dag.successors[None]) == 11
 
 
-def test_get_commit_editing_paths_2(sqlite_db_file):
+def test_get_commit_editing_dag_2(sqlite_db_file):
     time_from = datetime(2019, 2, 12, 11, 0, 0)
     time_to = datetime(2019, 2, 12, 12, 0, 0)
 
-    paths, dag, node_info, edge_info = git2net.get_commit_editing_paths(sqlite_db_file,
-                                                                        time_from=time_from,
-                                                                        time_to=time_to)
+    dag, node_info, edge_info = git2net.get_commit_editing_dag(sqlite_db_file,
+                                                               time_from=time_from,
+                                                               time_to=time_to)
 
     assert len(dag.isolate_nodes()) == 0
     assert len(dag.nodes) == 15
     assert len(dag.successors[None]) == 6
 
 
-def test_get_commit_editing_paths_3(sqlite_db_file):
+def test_get_commit_editing_dag_3(sqlite_db_file):
     time_from = datetime(2019, 2, 12, 12, 0, 0)
     time_to = datetime(2019, 2, 12, 13, 0, 0)
     filename = 'text_file.txt'
 
-    paths, dag, node_info, edge_info = git2net.get_commit_editing_paths(sqlite_db_file,
-                                                                        time_from=time_from,
-                                                                        time_to=time_to,
-                                                                        filename=filename)
+    dag, node_info, edge_info = git2net.get_commit_editing_dag(sqlite_db_file,
+                                                               time_from=time_from,
+                                                               time_to=time_to,
+                                                               filename=filename)
 
     assert len(dag.isolate_nodes()) == 0
     assert len(dag.nodes) == 17

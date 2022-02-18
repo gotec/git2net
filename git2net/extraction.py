@@ -1068,8 +1068,8 @@ def _check_mailmap(name, email, git_repo):
 
     matches = re.findall("^(.*) <(.*)>$", out_str)
     if len(matches) > 1:
-        raise Exception("""Error in mailmap check. Please report on
-                           https://github.com/gotec/git2net.""")
+        raise Exception(("Error in mailmap check. Please report on "
+                         "https://github.com/gotec/git2net."))
     elif len(matches) == 1:
         name, email = matches[0]
     # else name and email remain the same as the ones passed
@@ -1671,42 +1671,41 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                                                  .get_list_commits())
                     if not p_commits.issubset(c_commits):
                         if prev_repository != git_repo.repo.remotes.origin.url:
-                            raise Exception("""Found a database that was
-                                               created with identical settings.
-                                               However, some commits in the
-                                               database are not in the provided
-                                               git repository and the url of
-                                               the current origin is different
-                                               to the one listed in the
-                                               database. Please provide a clean
-                                               database or update the origin in
-                                               the current database if you want
-                                               to proceed.""")
+                            raise Exception(("Found a database that was "
+                                             "created with identical settings. "
+                                             "However, some commits in the "
+                                             "database are not in the provided "
+                                             "git repository and the url of "
+                                             "the current origin is different "
+                                             "to the one listed in the "
+                                             "database. Please provide a clean "
+                                             "database or update the origin in "
+                                             "the current database if you want "
+                                             "to proceed."))
                     else:
                         if p_commits == c_commits:
-                            print("The provided database is already complete!")
-                            return
+                            print("All commits have already been mined!")
                         else:
-                            print("""Found a matching database on provided
-                                    path. Skipping {} ({:.2f}%) of {} commits.
-                                    {} commits remaining."""
+                            print(("Found a matching database on provided "
+                                   "path. Skipping {} ({:.2f}%) of {} commits. "
+                                   "{} commits remaining.")
                                   .format(len(p_commits),
                                           len(p_commits)/len(c_commits)*100,
                                           len(c_commits),
                                           len(c_commits)-len(p_commits)))
                 else:
-                    raise Exception("""Found a database on provided path that
-                                       was created with settings not matching
-                                       the ones selected for the current run. A
-                                       path to either no database or a database
-                                       from a previously paused run with
-                                       identical settings is required.""")
+                    raise Exception(("Found a database on provided path that "
+                                     "was created with settings not matching "
+                                     "the ones selected for the current run. A "
+                                     "path to either no database or a database "
+                                     "from a previously paused run with "
+                                     "identical settings is required."))
         except sqlite3.OperationalError:
-            raise Exception("""Found a database on provided path that was
-                               likely not created with git2net. A path to
-                               either no database or a database from a
-                               previously paused run with identical settings
-                               is required.""")
+            raise Exception(("Found a database on provided path that was "
+                             "likely not created with git2net. A path to "
+                             "either no database or a database from a "
+                             "previously paused run with identical settings "
+                             "is required."))
     else:
         print("Found no database on provided path. Starting from scratch.")
         try:
@@ -1757,13 +1756,17 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                          in p_commits]
     else:
         if not set(commits).issubset(c_commits):
-            raise Exception("""At least one provided commit does not exist in
-                               the repository.""")
+            raise Exception(("At least one provided commit does not exist in "
+                             "the repository."))
         commits = [git_repo.get_commit(h) for h in commits]
         u_commits = [c for c in commits if c.hash not in p_commits]
 
-    if all_branches:
-        current_branch = git_repo.repo.active_branch.name
+    # Add information on commit being present in currently active branch
+    current_branch = git_repo.repo.active_branch.name
+    c_intersect = p_commits.intersection(c_commits)
+    if len(c_intersect) > 0:
+        print(("Updated branch information for already mined commits that are "
+               "in the active branch."))
         for c in p_commits.intersection(c_commits):
             b = con.execute("""SELECT branches
                                FROM commits
@@ -1835,8 +1838,8 @@ def mine_github(github_url, git_repo_dir, sqlite_db_file, branch=None,
     # check if the folder is empty if it exists
     if os.path.exists(git_repo_dir) and \
        (len(os.listdir(os.path.join(local_directory, git_repo_folder))) > 0):
-        print("""Provided folder is not empty. Skipping the cloning and trying
-                 to resume.""")
+        print(("Provided folder is not empty. Skipping the cloning and trying "
+               "to resume."))
     else:
         if branch:
             git.Git(local_directory).clone(github_url, git_repo_folder,

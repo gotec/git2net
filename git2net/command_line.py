@@ -11,111 +11,111 @@ import datetime
 
 
 def main():
-    parser = argparse.ArgumentParser(description="""Allows git2net to be used
-                                                    from the command line.""")
+    parser = argparse.ArgumentParser(description=("Allows git2net to be used "
+                                                  "from the command line."))
 
     subparsers = parser.add_subparsers(dest='command',
-                                       help="""Mine a repository or create
-                                               graph projections from a
-                                               database.""")
+                                       help=("Mine a repository or create "
+                                             "graph projections from a "
+                                             "database."))
     mine = subparsers.add_parser('mine',
-                                 description="""Mine a given git repository.
-                                                Information on commits and
-                                                edits will be written to an
-                                                SQLite database at the
-                                                provided path.""")
+                                 description=("ine a given git repository. "
+                                              "nformation on commits and "
+                                              "dits will be written to an "
+                                              "QLite database at the "
+                                              "provided path."))
     graph = subparsers.add_parser('graph',
-                                  description="""Generate graph projections
-                                                 from commit and edit
-                                                 information stored in a
-                                                 provided SQLite database. The
-                                                 database needs to be created
-                                                 using the 'mine' command in
-                                                 git2net. Graphs will be output
-                                                 as csv files at the given
-                                                 path.""")
+                                  description=("Generate graph projections "
+                                               "from commit and edit "
+                                               "information stored in a "
+                                               "provided SQLite database. The "
+                                               "database needs to be created "
+                                               "using the 'mine' command in "
+                                               "git2net. Graphs will be output "
+                                               "as csv files at the given "
+                                               "path."))
 
     mine.add_argument('repo',
-                      help="""Path to a local copy of the git reposity that
-                              will be mined.""",
+                      help=("Path to a local copy of the git reposity that "
+                            "will be mined."),
                       type=str)
     mine.add_argument('database',
-                      help="""Path to the database where results will be
-                              stored.""",
+                      help=("Path to the database where results will be "
+                            "stored."),
                       type=str)
 
     # "mine" options
     mine.add_argument('--commits',
-                      help="""Path to text file with list of commits to mine.
-                              Mines all commits if not provided (default).""",
+                      help=("Path to text file with list of commits to mine. "
+                            "Mines all commits if not provided (default)."),
                       dest='commits',
                       type=str,
                       default=None)
     mine.add_argument('--use-blocks',
-                      help="""Compare added and deleted blocks of code rather
-                      than lines.""",
+                      help=("Compare added and deleted blocks of code rather "
+                            "than lines."),
                       dest='use_blocks',
                       action='store_true',
                       default=False)
     mine.add_argument('--numprocesses',
-                      help="""Number of CPU cores used for multi-core
-                              processing. Defaults to number of CPU cores.""",
+                      help=("Number of CPU cores used for multi-core "
+                            "processing. Defaults to number of CPU cores."),
                       default=os.cpu_count(),
                       type=int,
                       dest='numprocesses')
     mine.add_argument('--chunksize',
-                      help="""Chunk size to be used in multiprocessing
-                              mapping.""",
+                      help=("Chunk size to be used in multiprocessing"
+                            "mapping."),
                       default=1,
                       type=int,
                       dest='chunksize')
     mine.add_argument('--exclude',
-                      help="""Exclude path prefixes in given file.""",
+                      help="Exclude path prefixes in given file.",
                       type=str,
                       default=None,
                       dest='exclude')
     mine.add_argument('--blame-C',
-                      help="""Git blame -C option. To not use -C provide ''
-                              (default)""",
+                      help=("Git blame -C option. To not use -C provide ''"
+                            "(default)"),
                       type=str,
                       dest='blame_C',
                       default='')
     mine.add_argument('--blame-w',
-                      help="""ignore whitespaces in git blame (-w option)""",
+                      help="ignore whitespaces in git blame (-w option)",
                       dest='blame_w',
                       action='store_true',
                       default=False)
     mine.add_argument('--max-modifications',
-                      help="""Do not process commits with more than given
-                              number of modifications. Use 0 to disable.""",
+                      help=("Do not process commits with more than given "
+                            "number of modifications. Use 0 to disable."),
                       dest='max_modifications',
                       default=0,
                       type=int)
     mine.add_argument('--timeout',
-                      help="""Stop processing commit after timeout. Use 0 to
-                              disable.""",
+                      help=("Stop processing commit after timeout. Use 0 to "
+                            "disable."),
                       default=0,
                       type=int,
                       dest='timeout')
     mine.add_argument('--extract-text',
-                      help="""Extract the commit message and line texts.""",
+                      help="Extract the commit message and line texts. ",
                       dest='extract_text',
                       action='store_true',
                       default=False)
     mine.add_argument('--extract_complexity',
-                      help="""Extract cyclomatic complexity and length of file
-                              (computationally expensive).""",
+                      help=("Extract cyclomatic complexity and length of file "
+                            "(computationally expensive)."),
                       dest='extract_complexity',
                       action='store_true',
                       default=False)
     mine.add_argument('--extract_merges',
-                      help="""Process merges.""",
+                      help="Process merges.",
                       dest='extract_merges',
                       action='store_true',
                       default=True)
     mine.add_argument('--extract_merge_deletions',
-                      help="""Extract lines that are not accepted during a
-                              merge as deletions.""",
+                      help=("Extract lines that are not accepted during a "
+                            "merge as deletions."),
                       dest='extract_merge_deletions',
                       action='store_true',
                       default=False)
@@ -125,21 +125,20 @@ def main():
                                     help='Type of graph projection.')
 
     graph_coedit = sp_graph.add_parser('coedit',
-                                       description="""Co-editing network
-                                                      projection.""")
+                                       description=("Co-editing network "
+                                                    "projection.")
     graph_bipartite = sp_graph.add_parser('bipartite',
-                                          description="""Bipartite network
-                                                         projection.""")
+                                          description=("Bipartite network "
+                                                       "projection.")
     graph_coauthor = sp_graph.add_parser('coauthor',
-                                         description="""Co-authorship network
-                                                        projection.""")
+                                         description=("Co-authorship network "
+                                                      "projection."))
     graph_commit_editing = sp_graph.add_parser('commit_editing',
-                                               description="""Commit editing
-                                                              DAG
-                                                              projection.""")
+                                               description=("Commit editing "
+                                                            "DAG projection."))
     graph_line_editing = sp_graph.add_parser('line_editing',
-                                             description="""Line editing DAG
-                                                            projection.""")
+                                             description=("Line editing DAG "
+                                                          "projection."))
 
     graph_priojections = [graph_coedit, graph_bipartite, graph_coauthor,
                           graph_commit_editing, graph_line_editing]
@@ -149,12 +148,12 @@ def main():
 
     for sp in graph_priojections:
         sp.add_argument('database',
-                        help="""Path to the database previously mined with
-                                git2net.""",
+                        help=("Path to the database previously mined with "
+                              "git2net."),
                         type=str)
         sp.add_argument('csvfile',
-                        help="""Path where the resulting graph will be stored
-                                as csv.""",
+                        help=("Path where the resulting graph will be stored "
+                              "as csv."),
                         type=str)
 
     for sp in has_time:
@@ -167,8 +166,8 @@ def main():
 
     for sp in has_filename:
         sp.add_argument('--filename',
-                        help="""Path to file in the repository for which
-                                commit-editing paths are extracted.""",
+                        help=("Path to file in the repository for which "
+                              "commit-editing paths are extracted."),
                         dest='filename', default=None, type=str)
 
     args = parser.parse_args()

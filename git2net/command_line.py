@@ -126,10 +126,10 @@ def main():
 
     graph_coedit = sp_graph.add_parser('coedit',
                                        description=("Co-editing network "
-                                                    "projection.")
+                                                    "projection."))
     graph_bipartite = sp_graph.add_parser('bipartite',
                                           description=("Bipartite network "
-                                                       "projection.")
+                                                       "projection."))
     graph_coauthor = sp_graph.add_parser('coauthor',
                                          description=("Co-authorship network "
                                                       "projection."))

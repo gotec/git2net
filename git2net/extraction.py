@@ -1581,29 +1581,24 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
     Creates sqlite database with details on commits and edits for a given
     git repository.
 
-    :git_repo_dir: path to the git repository that is mined
-    :sqlite_db_file: path (including database name) where the sqlite
-                        database will be created
-    :commits: only consider specific set of commits, considers all if empty
-    :use_blocks: bool, determins if analysis is performed on block or line
-                    basis
-    :no_of_processes: number of parallel processes that are spawned
-    :chunksize: number of tasks that are assigned to a process at a time
-    :exclude: file paths that are excluded from the analysis
-    :blame_C: string for the blame C option following the pattern
-                 "-C[<num>]" (computationally expensive)
-    :blame_w: bool, ignore whitespaces in git blame (-w option)
-    :max_modifications: ignore commit if there are more modifications
-    :timeout: stop processing commit after given time in seconds
-    :extract_text: extract the commit message and line texts
-    :extract_complexity: extract cyclomatic complexity and length of file
-                            (computationally expensive)
-    :extract_merges: process merges
-    :extract_merge_deletions: extract lines that are not accepted during a
-                                 merge as 'deletions'
+    :param str git_repo_dir: path to the git repository that is mined
+    :param str sqlite_db_file: path (including database name) where the sqlite database will be created
+    :param List[str] commits: only consider specific set of commits, considers all if empty
+    :param bool use_blocks: determins if analysis is performed on block or line basis
+    :param int no_of_processes: number of parallel processes that are spawned
+    :param int chunksize: number of tasks that are assigned to a process at a time
+    :praam List[str] exclude: file paths that are excluded from the analysis
+    :param str blame_C: string for the blame C option following the pattern "-C[<num>]" (computationally expensive)
+    :param bool blame_w: bool, ignore whitespaces in git blame (-w option)
+    :param int max_modifications: ignore commit if there are more modifications
+    :param int timeout: stop processing commit after given time in seconds
+    :param bool extract_text: extract the commit message and line texts
+    :param bool extract_complexity: extract cyclomatic complexity and length of file (computationally expensive)
+    :param bool extract_merges: process merges
+    :param bool extract_merge_deletions: extract lines that are not accepted during a merge as 'deletions'
 
     
-    :return: sqlite database will be written at specified location
+    :return: SQLite database will be written at specified location
     :example:
     .. jupyter-execute::
     

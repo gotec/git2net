@@ -1,3 +1,4 @@
+git2net
 sphinx
 sphinx_autodoc_typehints
 jupyter_sphinx

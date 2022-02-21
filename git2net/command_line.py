@@ -1,6 +1,6 @@
 from .extraction import mine_git_repo
 from .visualisation import get_line_editing_paths
-from .visualisation import get_commit_editing_paths
+from .visualisation import get_commit_editing_dag
 from .visualisation import get_coediting_network
 from .visualisation import get_coauthorship_network
 from .visualisation import get_bipartite_network
@@ -210,10 +210,10 @@ def main():
                       extract_merge_deletions=args.extract_merge_deletions)
     elif args.command == 'graph':
         if args.projection == 'commit_editing':
-            _, d, _, _ = get_commit_editing_paths(args.database,
-                                                  filename=args.filename,
-                                                  time_from=args.time_from,
-                                                  time_to=args.time_to)
+            d, _, _ = get_commit_editing_dag(args.database,
+                                             filename=args.filename,
+                                             time_from=args.time_from,
+                                             time_to=args.time_to)
             d.write_file(args.csvfile)
         elif args.projection == 'line_editing':
             if args.filename:

@@ -18,12 +18,38 @@ This also installs the necessary dependencies. `git2net` depends on the `python-
 
 ## How to use git2net
 
-After installation, we suggest to check out our [tutorials](https://github.com/gotec/git2net-tutorials), detailing how to get started using `git2net`. We also provide detailed inline documentation serving as reference.
+### Tutorials
 
-In addition, we have publised some motivating results as well as details on the mining algorithm in ["git2net - Mining Time-Stamped Co-Editing Networks from Large git Repositories"](https://dl.acm.org/doi/10.1109/MSR.2019.00070). Together with the paper, we have further released a jupyter notebook (using an early version of `git2net`) reproducing the majority of the results shown in the paper on [zenodo.org](https://zenodo.org/record/2587483#.XK4LPENoSCg).
+After installation, we suggest to check out our [tutorials](https://github.com/gotec/git2net-tutorials), detailing how to get started using `git2net`.
+We currently provide five tutorials covering different aspects of analysing your repository with `git2net`.
+You can directly interact with the notebooks in *Binder*, or view them in *NBViewer* via the badges below.
 
-All functions of `git2net`have been tested on Ubuntu, Mac OS, and Windows.
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/gotec/git2net-tutorials/HEAD)
+[![NBViewer](https://img.shields.io/badge/View%20on-nbviewer-informational)](https://nbviewer.org/github/gotec/git2net-tutorials/tree/main/)
 
+In addition, we provide links to the individual tutorial notebooks below:
+
+| Tutorial | Binder | Google Colab | NBViewer |
+| :---     | :---:    | :---:  | :---: |
+| 1. Cloning a repository for analysis | [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/gotec/git2net-tutorials/HEAD?labpath=1_Cloning_Git_Repositories.ipynb) | [![Open Cloning Tutorial In Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gotec/git2net-tutorials/blob/master/1_Cloning_Git_Repositories.ipynb) | [![NBViewer](https://img.shields.io/badge/View%20on-nbviewer-informational)](https://nbviewer.org/github/gotec/git2net-tutorials/tree/main/1_Cloning_Git_Repositories.ipynb) |
+| 2. Mining git repositories with [`git2net`](https://github.com/gotec/git2net) | [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/gotec/git2net-tutorials/HEAD?labpath=2_Mining_Git_Repositories.ipynb) | [![Open Mining Tutorial In Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gotec/git2net-tutorials/blob/master/2_Mining_Git_Repositories.ipynb) | [![NBViewer](https://img.shields.io/badge/View%20on-nbviewer-informational)](https://nbviewer.org/github/gotec/git2net-tutorials/tree/main/2_Mining_Git_Repositories.ipynb) |
+| 3. Author disambiguation with [`gambit`](https://github.com/gotec/gambit) | [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/gotec/git2net-tutorials/HEAD?labpath=3_Author_Disambiguation.ipynb) | [![Open Disambiguation Tutorial In Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gotec/git2net-tutorials/blob/master/3_Author_Disambiguation.ipynb) | [![NBViewer](https://img.shields.io/badge/View%20on-nbviewer-informational)](https://nbviewer.org/github/gotec/git2net-tutorials/tree/main/3_Author_Disambiguation.ipynb) |
+| 4. Network analysis with [`pathpy`](https://www.pathpy.net/) | [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/gotec/git2net-tutorials/HEAD?labpath=4_Network_Analysis.ipynb) | [![Open Network Tutorial In Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gotec/git2net-tutorials/blob/master/4_Network_Analysis.ipynb) | [![NBViewer](https://img.shields.io/badge/View%20on-nbviewer-informational)](https://nbviewer.org/github/gotec/git2net-tutorials/tree/main/4_Network_Analysis.ipynb) |
+| 5. Database-based analyses | [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/gotec/git2net-tutorials/HEAD?labpath=5_Database_Analysis.ipynb) | [![Open Database Tutorial In Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gotec/git2net-tutorials/blob/master/5_Database_Analysis.ipynb) | [![NBViewer](https://img.shields.io/badge/View%20on-nbviewer-informational)](https://nbviewer.org/github/gotec/git2net-tutorials/tree/main/5_Database_Analysis.ipynb) |
+
+### Documentation
+
+We provide a detailed inline documentation serving as reference.
+
+### Usage examples
+
+We have published some motivating results as well as details on the mining algorithm in ["git2net - Mining Time-Stamped Co-Editing Networks from Large git Repositories"](https://dl.acm.org/doi/10.1109/MSR.2019.00070).
+
+In ["Analysing Time-Stamped Co-Editing Networks in Software Development Teams using git2net"](https://link.springer.com/article/10.1007/s10664-020-09928-2), we use `git2net` to mine more than 1.2 million commits of over 25,000 developers. We use this data to test a hypothesis on the relation between developer productivity and co-editing patterns in software teams.
+
+Finally, in ["Big Data = Big Insights? Operationalising Brooks' Law in a Massive GitHub Data Set"](https://arxiv.org/abs/2201.04588), we mine a corpus containing over 200 GitHub repositories using `git2net`. Based on the resulting data, we study the relationship between team size and productivity in OSS development teams. If you want to use this extensive data set for your own study, we made it publicly available on [zenodo.org](https://doi.org/10.5281/zenodo.5294965).
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.5294965.svg)](https://doi.org/10.5281/zenodo.5294965)
 
 ## How to cite git2net
 

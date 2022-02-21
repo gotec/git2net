@@ -23,3 +23,5 @@ from .visualisation import get_commit_editing_dag
 from .visualisation import get_coediting_network
 from .visualisation import get_coauthorship_network
 from .visualisation import get_bipartite_network
+
+__all__ = ['mine_git_repo']

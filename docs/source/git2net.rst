@@ -25,30 +25,6 @@ Extraction
    :members:
    :undoc-members:
    :exclude-members: TimeoutException, Alarm
-   
---------------
-Disambiguation
---------------
-
-.. automodule:: git2net.disambiguation
-   :members:
-   :undoc-members:
-
--------------
-Visualisation
--------------
-
-.. automodule:: git2net.visualisation
-   :members:
-   :undoc-members:
-   
-------------
-Command Line
-------------
-
-.. automodule:: git2net.command_line
-   :members:
-   :undoc-members:
 
 =======
 License

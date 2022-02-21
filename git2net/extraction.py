@@ -71,7 +71,8 @@ def _get_block_length(lines, k):
     :param dict lines: dictionary of added or deleted lines
     :param int k: line number to check for
 
-    :returns int block_size: number of lines in the contiguously block that was modified
+    :return:
+        - block_size (:py:class:`int`) - number of lines in the contiguously block that was modified
     """
 
     if k not in lines or (k > 1 and k - 1 in lines):
@@ -98,7 +99,7 @@ def _identify_edits(deleted_lines, added_lines, extraction_settings):
     :param dict added_lines: dictionary of added lines
     :param dict extraction_settings: settings for the extraction
 
-    :returns:
+    :return:
         - pre_to_post (:py:class:`dict`) - dictionary mapping line numbers before and after commit
         - edits (:py:class:`pandas.DataFrame`) - dataframe with information on editscd ..
     """
@@ -231,7 +232,7 @@ def text_entropy(text):
 
     :param str text: string to compute the text entropy for
 
-    :returns:
+    :return:
         - `text_entropy` (:py:class:`float`) - text entropy of the given string
     """
     # we only consider UTF8 characters to compute the text entropy
@@ -244,13 +245,13 @@ def text_entropy(text):
 
 
 def get_commit_dag(git_repo_dir):
-    """ Extracts commit dag from given path to git repository.
+    """
+    Extracts commit dag from given path to git repository.
 
-    Args:
-        git_repo_dir: path to the git repository that is mined
+    :param str git_repo_dir: path to the git repository that is mined
 
-    Returns:
-        dag: dag linking successive commits in the same branch
+    :return:
+        - dag (:py:class:`pathpy.DAG`) - dag linking successive commits in the same branch
     """
     git_repo = pydriller.Git(git_repo_dir)
     commits = [x.hash[0:7] for x in git_repo.get_list_commits()]
@@ -262,14 +263,14 @@ def get_commit_dag(git_repo_dir):
 
 
 def _parse_blame_C(blame_C):
-    """ Converts the input provided for the copy option in git blame to a list
-        of options required as input for gitpython.
+    """
+    Converts the input provided for the copy option in git blame to a list
+    of options required as input for gitpython.
 
-    Args:
-        blame_C: string defining how the copy option in git blame is used
+    :param str blame_C: string defining how the copy option in git blame is used
 
-    Returns:
-        list_of_arguments: list of parameters for gitpython blame
+    :return:
+        - list_of_arguments (:py:class:`list`) - list of parameters for gitpython blame
     """
     pattern = re.compile("(^$|^-?C{0,3}[0-9]*$)")
     if not pattern.match(blame_C):
@@ -287,14 +288,14 @@ def _parse_blame_C(blame_C):
 
 
 def _parse_porcelain_blame(blame):
-    """ Parses the porcelain output of git blame and returns content as
-        dataframe.
+    """
+    Parses the porcelain output of git blame and returns content as
+    dataframe.
 
-    Args:
-        blame: porcelain output of git blame
+    :param str blame: porcelain output of git blame
 
-    Returns:
-        blame_info: content of blame as pandas dataframe
+    :return:
+        - blame_info (:py:class:`dict`) - content of blame as pandas dataframe
     """
     l = {'original_commit_hash': [],
          'original_line_no': [],
@@ -328,21 +329,19 @@ def _parse_porcelain_blame(blame):
 def _get_edit_details(edit, commit, deleted_lines, added_lines,
                       blame_info_parent, blame_info_commit,
                       extraction_settings):
-    """ Extracts detailed measures for a given edit.
+    """
+    Extracts detailed measures for a given edit.
 
-    Args:
-        edit: edit as identified in _identify_edits
-        commit: pydriller commit object containing the edit
-        deleted_lines: dict of added lines
-        added_lines: dict of deleted lines
-        blame_info_parent: blame info for parent commit as output from
-                           _parse_porcelain_blame
-        blame_info_commit: blame info for current commit as output from
-                           _parse_porcelain_blame
-        extraction_settings: settings for the extraction
+    :param dict edit: edit as identified in _identify_edits
+    :param pydriller.Commit commit: pydriller commit object containing the edit
+    :param dict deleted_lines: dict of added lines
+    :param dict added_lines: dict of deleted lines
+    :param str blame_info_parent: blame info for parent commit as output from _parse_porcelain_blame
+    :param str blame_info_commit: blame info for current commit as output from _parse_porcelain_blame
+    :param dict extraction_settings: settings for the extraction
 
-    Returns:
-        e: pandas dataframe containing information on edits
+    :return:
+        - (:py:class:`pandas.DataFrame`) - pandas dataframe containing information on edits
     """
     # Different actions for different types of edits.
     e = {}
@@ -601,17 +600,16 @@ def is_binary_file(filename, file_content):
 
 
 def _extract_edits(git_repo, commit, modification, extraction_settings):
-    """ Returns dataframe with metadata on edits made in a given modification.
+    """
+    Returns dataframe with metadata on edits made in a given modification.
 
-    Args:
-        git_repo: pydriller Git object
-        commit: pydriller Commit object
-        modification: pydriller ModificationFile object
-        extraction_settings: settings for the extraction
+    :param pydriller.Git git_repo: pydriller Git object
+    :param pydriller.Commit commit: pydriller Commit object
+    :param pydriller.ModifiedFile modification: pydriller ModifiedFile object
+    :param dict extraction_settings: settings for the extraction
 
-    Returns:
-        edits_info: pandas DataFrame object containing metadata on all edits in
-                    given modification
+    :return:
+        - edits_info (:py:class:`pandas.DataFrame`) - pandas DataFrame object containing metadata on all edits in given modification
     """
 
     binary_file = is_binary_file(modification.filename, modification.diff)
@@ -742,19 +740,17 @@ def _extract_edits(git_repo, commit, modification, extraction_settings):
 
 def _extract_edits_merge(git_repo, commit, modification_info,
                          extraction_settings):
-    """ Returns dataframe with metadata on edits made in a given modification
-        for merge commits.
+    """
+    Returns dataframe with metadata on edits made in a given modification
+    for merge commits.
 
-    Args:
-        git_repo: pydriller Git object
-        commit: pydriller Commit object
-        modification_info: information on the modification as stored in a
-                           pydriller ModificationFile.
-        extraction_settings: settings for the extraction
+    :param str git_repo: pydriller Git object
+    :param pydriller.Commit commit: pydriller Commit object
+    :param pydriller.ModifiedFile modification_info: information on the modification as stored in a pydriller ModifiedFile.
+    :param dict extraction_settings: settings for the extraction
 
-    Returns:
-        edits_info: pandas DataFrame object containing metadata on all edits in
-                    given modification
+    :return:
+        - edits_info (:py:class:`pandas.DataFrame`) pandas DataFrame object containing metadata on all edits in given modification
     """
     assert commit.merge
     # With merges, the following cases can occur:
@@ -955,26 +951,26 @@ def _extract_edits_merge(git_repo, commit, modification_info,
 
 
 def _get_edited_file_paths_since_split(git_repo, commit):
-    """ For a merge commit returns list of all files edited since the last
-        creation of a new branch relevant for the merge.
-
-    Args:
-        git_repo: pydriller Git object
-        commit: pydriller Commit object
-
-    Returns:
-        edited_file_paths: list of paths to the edited files
     """
+    For a merge commit returns list of all files edited since the last
+    creation of a new branch relevant for the merge.
+
+    :param pydriller.Git git_repo: pydriller Git object
+    :param pydriller.Commit commit: pydriller Commit object
+
+    :return:
+        - edited_file_paths (:py:class:`List`) - list of paths to the edited files
+    """
+    
     def expand_dag(dag, leafs):
-        """ Expands a dag by adding the parents of a given set of nodes to the
-            dag.
+        """
+        Expands a dag by adding the parents of a given set of nodes to the dag.
 
-        Args:
-            dag: pathpy DAG object
-            leafs: set of nodes that are expanded
-
-        Returns:
-            dag: the expanded pathpy DAG object
+        :param pathpy.DAG dag: pathpy DAG object
+        :param set leafs: set of nodes that are expanded
+        
+        :return:
+            - dag (:py:class:`pathpy.DAG`) - the expanded pathpy DAG object
         """
         for node in leafs:
             parents = git_repo.get_commit(node).parents
@@ -983,14 +979,14 @@ def _get_edited_file_paths_since_split(git_repo, commit):
         return dag
 
     def common_node_on_paths(paths):
-        """ Computes the overlap between given sets of nodes. Returns the nodes
-            present in all sets.
+        """
+        Computes the overlap between given sets of nodes. Returns the nodes
+        present in all sets.
 
-        Args:
-            paths: list of node sequences
+        :param List paths: list of node sequences
 
-        Returns:
-            common_nodes: set of nodes that are present on all paths
+        :return:
+            - common_nodes (:py:class:`set`) - set of nodes that are present on all paths
         """
         # Drop first and last element of the path.
         common_nodes = set(paths[0][1:-1])
@@ -1000,14 +996,14 @@ def _get_edited_file_paths_since_split(git_repo, commit):
         return common_nodes
 
     def remove_successors(dag, node):
-        """ Removes all successors of a node from a given dag.
+        """
+        Removes all successors of a node from a given dag.
 
-        Args:
-            dag: pathpy DAG object
-            node: node for which successors shall be removed
+        :param pathpy.DAG dag: pathpy DAG object
+        :param str node: node for which successors shall be removed
 
-        Returns:
-            dag: reduced pathpy DAG object
+        :return:
+            - dag (:py:class:`pathpy.DAG`) - reduced pathpy DAG object
         """
         rm = [n for nl in [x[1:] for x in dag.routes_from_node(node)]
               for n in nl]
@@ -1050,17 +1046,17 @@ def _get_edited_file_paths_since_split(git_repo, commit):
 
 
 def _check_mailmap(name, email, git_repo):
-    """ Returns matching user from git .mailmap file if available. Returns
-        input if user is not in mailmap or mailmap is unavailable.
+    """
+    Returns matching user from git .mailmap file if available. Returns
+    input if user is not in mailmap or mailmap is unavailable.
 
-    Args:
-        name: username
-        email: git email
-        git_repo: PyDriller Git object
+    'param str name: username
+    'param str email: git email
+    'param pydriller.Git git_repo: PyDriller Git object
 
-    Returns:
-        name: corresponding username from mailmap
-        email: corresponding email from mailmap
+    :return:
+        - name (:py:class:`str`) - corresponding username from mailmap
+        - email (:py:class:`str`) - corresponding email from mailmap
     """
     test_str = '{} <{}>'.format(name, email)
     out_str = git.Git(str(git_repo.path)).check_mailmap(test_str)
@@ -1077,19 +1073,18 @@ def _check_mailmap(name, email, git_repo):
 
 
 def _process_commit(args):
-    """ Extracts information on commit and all edits made with the commit.
+    """
+    Extracts information on commit and all edits made with the commit.
 
-    Args:
-        args: dictionary with arguments. For multiprocessing, function can only
-              take single input.
-              Dictionary must contain:
-                  git_repo_dir: path to the git repository that is mined
-                  commit_hash: hash of the commit that is processed
-                  extraction_settings: settings for the extraction
+    :param dict args: dictionary with arguments. For multiprocessing, function can only
+                      take single input.
+                      Dictionary must contain:
+                          git_repo_dir: path to the git repository that is mined
+                          commit_hash: hash of the commit that is processed
+                          extraction_settings: settings for the extraction
 
-    Returns:
-        extracted_result: dict containing two dataframes with information of
-                          commit and edits
+    :return:
+        - extracted_result (:py:class:`dict`) - dict containing two dataframes with information of commit and edits
     """
     with git_init_lock:
         git_repo = pydriller.Git(args['git_repo_dir'])
@@ -1253,17 +1248,16 @@ def _process_commit(args):
 
 def _process_repo_serial(git_repo_dir, sqlite_db_file, commits,
                          extraction_settings):
-    """ Processes all commits in a given git repository in a serial manner.
+    """
+    Processes all commits in a given git repository in a serial manner.
 
-    Args:
-        git_repo_dir: path to the git repository that is mined
-        sqlite_db_file: path (including database name) where the sqlite
-                        database will be created
-        commits: list of commits that have to be processed
-        extraction_settings: settings for the extraction
+    :param str git_repo_dir: path to the git repository that is mined
+    :param str sqlite_db_file: path (including database name) where the sqlite database will be created
+    :param List[str] commits: list of commits that have to be processed
+    :param dict extraction_settings: settings for the extraction
 
-    Returns:
-        sqlite database will be written at specified location
+    :return:
+        - sqlite database will be written at specified location
     """
 
     # git_repo = pydriller.Git(git_repo_dir)
@@ -1290,14 +1284,13 @@ def _init(git_repo_dir, git_init_lock_):
 
 def _process_repo_parallel(git_repo_dir, sqlite_db_file, commits,
                            extraction_settings):
-    """ Processes all commits in a given git repository in a parallel manner.
+    """
+    Processes all commits in a given git repository in a parallel manner.
 
-    Args:
-        git_repo_dir: path to the git repository that is mined
-        sqlite_db_file: path (including database name) where the sqlite
-                        database will be created
-        commits: list of commits that are already in the database
-        extraction_settings: settings for the extraction
+    :param str git_repo_dir: path to the git repository that is mined
+    :param str sqlite_db_file: path (including database name) where the sqlite database will be created
+    :param List[str] commits: list of commits that are already in the database
+    :param dict extraction_settings: settings for the extraction
 
     Returns:
         sqlite database will be written at specified location
@@ -1327,15 +1320,14 @@ def _process_repo_parallel(git_repo_dir, sqlite_db_file, commits,
 
 
 def identify_file_renaming(git_repo_dir):
-    """ Identifies all names and locations different files in a repository have
-        had.
+    """
+    Identifies all names and locations different files in a repository have had.
 
-    Args:
-        git_repo_dir: path to the git repository that is mined
+    :param str git_repo_dir: path to the git repository that is mined
 
-    Returns:
-        dag: pathpy DAG object depicting the renaming process
-        aliases: dictionary containing all aliases for all files
+    :return:
+        - dag (:py:class:`pathpy.DAG`) dag - pathpy DAG object depicting the renaming process
+        - aliases (:py:class:`dict`) - dictionary containing all aliases for all files
     """
 
     # TODO: Consider corner case where file is renamed and new file with old
@@ -1371,18 +1363,17 @@ def identify_file_renaming(git_repo_dir):
 
 
 def get_unified_changes(git_repo_dir, commit_hash, file_path):
-    """ Returns dataframe with github-like unified diff representation of the
-        content of a file before and after a commit for a given git repository,
-        commit hash and file path.
+    """
+    Returns dataframe with github-like unified diff representation of the
+    content of a file before and after a commit for a given git repository,
+    commit hash and file path.
 
-    Args:
-        git_repo_dir: path to the git repository that is mined
-        commit_hash: commit hash for which the changes are computed
-        file_path: path to file (within the repository) for which the changes
-                   are computed
+    :param str git_repo_dir: path to the git repository that is mined
+    :param str commit_hash: commit hash for which the changes are computed
+    :param str file_path: path to file (within the repository) for which the changes are computed
 
-    Returns:
-        df: pandas dataframe listing changes made to file in commit
+    :return:
+        - (:py:class:`pandas.DataFrame`) - pandas dataframe listing changes made to file in commit
     """
     git_repo = pydriller.Git(git_repo_dir)
     commit = git_repo.get_commit(commit_hash)
@@ -1446,16 +1437,15 @@ def get_unified_changes(git_repo_dir, commit_hash, file_path):
 
 def check_mining_complete(git_repo_dir, sqlite_db_file, commits=[],
                           all_branches=False, return_number_missing=False):
-    """ Checks status of a mining operation
+    """
+    Checks status of a mining operation
 
-    Args:
-        git_repo_dir: path to the git repository that is mined
-        sqlite_db_file: path (including database name) where with sqlite
-                        database
-        commits: only consider specific set of commits, considers all if empty
+    :param str git_repo_dir: path to the git repository that is mined
+    :param str sqlite_db_file: path (including database name) where with sqlite database
+    :param List(str) commits: only consider specific set of commits, considers all if empty
 
-    Returns:
-        True if all commits are included in the database, otherwise False
+    :return:
+        - (:py:class:`dict`) - True if all commits are included in the database, otherwise False
     """
     git_repo = pydriller.Git(git_repo_dir)
     if os.path.exists(sqlite_db_file):
@@ -1487,16 +1477,15 @@ def check_mining_complete(git_repo_dir, sqlite_db_file, commits=[],
 
 
 def mining_state_summary(git_repo_dir, sqlite_db_file, all_branches=False):
-    """ Prints mining progress of database and returns dataframe with details
-        on missing commits.
+    """
+    Prints mining progress of database and returns dataframe with details
+    on missing commits.
 
-    Args:
-        git_repo_dir: path to the git repository that is mined
-        sqlite_db_file: path (including database name) where with sqlite
-                        database
+    :param str git_repo_dir: path to the git repository that is mined
+    :param str sqlite_db_file: path (including database name) where with sqlite database
 
-    Returns:
-        dataframe with details on missing commits
+    :return:
+        - (:py:class:`pandas.DataFrame`) dataframe with details on missing commits
     """
     git_repo = pydriller.Git(git_repo_dir)
     if os.path.exists(sqlite_db_file):
@@ -1596,7 +1585,6 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
     :param bool extract_merges: process merges
     :param bool extract_merge_deletions: extract lines that are not accepted during a merge as 'deletions'
 
-    
     :return: SQLite database will be written at specified location
     """
     git_version = check_output(['git', '--version']).strip().decode("utf-8")
@@ -1785,23 +1773,18 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
 
 def mine_github(github_url, git_repo_dir, sqlite_db_file, branch=None,
                 **kwargs):
-    """ Clones a repository from github and starts the mining process.
+    """
+    Clones a repository from github and starts the mining process.
 
-    Args:
-        github_url: url to the publicly accessible github project that will be
-                    mined can be priovided as full url or <OWNER>/<REPOSITORY>
-        git_repo_dir: path to the git repository that is mined if path ends
-                      with '/' an additional folder will be created
-        sqlite_db_file: path (including database name) where the sqlite
-                        database will be created
-        branch: The branch of the github project that will be checked out and
-                mined. If no branch is provided the default branch of the
-                repository is used.
-        **kwargs: arguments that will be passed on to mine_git_repo
+    :param str github_url: url to the publicly accessible github project that will be mined can be priovided as full url or <OWNER>/<REPOSITORY>
+    :param str git_repo_dir: path to the git repository that is mined if path ends with '/' an additional folder will be created
+    :param str sqlite_db_file: path (including database name) where the sqlite database will be created
+    :param str branch: The branch of the github project that will be checked out and mined. If no branch is provided the default branch of the repository is used.
+    :param \**kwargs: arguments that will be passed on to mine_git_repo
 
-    Returns:
-        git repository will be cloned to specified location
-        sqlite database will be written at specified location
+    :return:
+        - git repository will be cloned to specified location
+        - SQLite database will be written at specified location
     """
     # github_url can either be provided as full url or as in form <USER>/<REPO>
     user_repo_pattern = r'^([^\/]*)\/([^\/]*)$'

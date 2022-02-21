@@ -233,7 +233,7 @@ def text_entropy(text):
     :param str text: string to compute the text entropy for
 
     :return:
-        - `text_entropy` (:py:class:`float`) - text entropy of the given string
+        :py:class:*float* &ndash; text entropy of the given string
     """
     # we only consider UTF8 characters to compute the text entropy
     pk = [text.count(chr(i)) for i in range(256)]
@@ -251,7 +251,7 @@ def get_commit_dag(git_repo_dir):
     :param str git_repo_dir: path to the git repository that is mined
 
     :return:
-        - dag (:py:class:`pathpy.DAG`) - dag linking successive commits in the same branch
+        :py:class:*pathpy.DAG* &ndash; dag linking successive commits in the same branch
     """
     git_repo = pydriller.Git(git_repo_dir)
     commits = [x.hash[0:7] for x in git_repo.get_list_commits()]
@@ -580,6 +580,16 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines,
 
 
 def is_binary_file(filename, file_content):
+    """
+    Detects if a file with given content is a binary file.
+    
+    :param str filename: name of the file including its file extension
+    :param str file_content: content of the file
+    
+    :returns:
+        :py:class:*bool* &ndash; True if binary file is detected, otherwise False
+    """
+    
     if filename is None:
         return False
     else:
@@ -1326,8 +1336,8 @@ def identify_file_renaming(git_repo_dir):
     :param str git_repo_dir: path to the git repository that is mined
 
     :return:
-        - dag (:py:class:`pathpy.DAG`) dag - pathpy DAG object depicting the renaming process
-        - aliases (:py:class:`dict`) - dictionary containing all aliases for all files
+        - :py:class:*pathpy.DAG* &ndash; pathpy DAG object depicting the renaming process
+        - :py:class:*dict* &ndash; dictionary containing all aliases for all files
     """
 
     # TODO: Consider corner case where file is renamed and new file with old
@@ -1373,7 +1383,7 @@ def get_unified_changes(git_repo_dir, commit_hash, file_path):
     :param str file_path: path to file (within the repository) for which the changes are computed
 
     :return:
-        - (:py:class:`pandas.DataFrame`) - pandas dataframe listing changes made to file in commit
+        :py:class:*pandas.DataFrame* &ndash; pandas dataframe listing changes made to file in commit
     """
     git_repo = pydriller.Git(git_repo_dir)
     commit = git_repo.get_commit(commit_hash)
@@ -1442,10 +1452,10 @@ def check_mining_complete(git_repo_dir, sqlite_db_file, commits=[],
 
     :param str git_repo_dir: path to the git repository that is mined
     :param str sqlite_db_file: path (including database name) where with sqlite database
-    :param List(str) commits: only consider specific set of commits, considers all if empty
+    :param List[str] commits: only consider specific set of commits, considers all if empty
 
     :return:
-        - (:py:class:`dict`) - True if all commits are included in the database, otherwise False
+        :py:class:*bool* &ndash; True if all commits are included in the database, otherwise False
     """
     git_repo = pydriller.Git(git_repo_dir)
     if os.path.exists(sqlite_db_file):
@@ -1485,7 +1495,7 @@ def mining_state_summary(git_repo_dir, sqlite_db_file, all_branches=False):
     :param str sqlite_db_file: path (including database name) where with sqlite database
 
     :return:
-        - (:py:class:`pandas.DataFrame`) dataframe with details on missing commits
+        :py:class:*pandas.DataFrame* &ndash; dataframe with details on missing commits
     """
     git_repo = pydriller.Git(git_repo_dir)
     if os.path.exists(sqlite_db_file):
@@ -1575,7 +1585,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
     :param bool use_blocks: determins if analysis is performed on block or line basis
     :param int no_of_processes: number of parallel processes that are spawned
     :param int chunksize: number of tasks that are assigned to a process at a time
-    :praam List[str] exclude: file paths that are excluded from the analysis
+    :param List[str] exclude: file paths that are excluded from the analysis
     :param str blame_C: string for the blame C option following the pattern "-C[<num>]" (computationally expensive)
     :param bool blame_w: bool, ignore whitespaces in git blame (-w option)
     :param int max_modifications: ignore commit if there are more modifications
@@ -1585,7 +1595,8 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
     :param bool extract_merges: process merges
     :param bool extract_merge_deletions: extract lines that are not accepted during a merge as 'deletions'
 
-    :return: SQLite database will be written at specified location
+    :return:
+        SQLite database will be written at specified location
     """
     git_version = check_output(['git', '--version']).strip().decode("utf-8")
 

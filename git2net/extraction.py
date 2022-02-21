@@ -1577,33 +1577,45 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                   max_modifications=0, timeout=0, extract_text=False,
                   extract_complexity=False, extract_merges=True,
                   extract_merge_deletions=False, all_branches=False):
-    """ Creates sqlite database with details on commits and edits for a given
-        git repository.
+    """
+    Creates sqlite database with details on commits and edits for a given
+    git repository.
 
-    Args:
-        git_repo_dir: path to the git repository that is mined
-        sqlite_db_file: path (including database name) where the sqlite
+    :git_repo_dir: path to the git repository that is mined
+    :sqlite_db_file: path (including database name) where the sqlite
                         database will be created
-        commits: only consider specific set of commits, considers all if empty
-        use_blocks: bool, determins if analysis is performed on block or line
+    :commits: only consider specific set of commits, considers all if empty
+    :use_blocks: bool, determins if analysis is performed on block or line
                     basis
-        no_of_processes: number of parallel processes that are spawned
-        chunksize: number of tasks that are assigned to a process at a time
-        exclude: file paths that are excluded from the analysis
-        blame_C: string for the blame C option following the pattern
+    :no_of_processes: number of parallel processes that are spawned
+    :chunksize: number of tasks that are assigned to a process at a time
+    :exclude: file paths that are excluded from the analysis
+    :blame_C: string for the blame C option following the pattern
                  "-C[<num>]" (computationally expensive)
-        blame_w: bool, ignore whitespaces in git blame (-w option)
-        max_modifications: ignore commit if there are more modifications
-        timeout: stop processing commit after given time in seconds
-        extract_text: extract the commit message and line texts
-        extract_complexity: extract cyclomatic complexity and length of file
+    :blame_w: bool, ignore whitespaces in git blame (-w option)
+    :max_modifications: ignore commit if there are more modifications
+    :timeout: stop processing commit after given time in seconds
+    :extract_text: extract the commit message and line texts
+    :extract_complexity: extract cyclomatic complexity and length of file
                             (computationally expensive)
-        extract_merges: process merges
-        extract_merge_deletions: extract lines that are not accepted during a
+    :extract_merges: process merges
+    :extract_merge_deletions: extract lines that are not accepted during a
                                  merge as 'deletions'
 
-    Returns:
-        sqlite database will be written at specified location
+    
+    :return: sqlite database will be written at specified location
+    :example:
+    .. jupyter-execute::
+    
+        import git2net
+        import git
+        
+        git_repo_url = 'https://github.com/gotec/git2net.git'
+        git_repo_dir = 'git2net4analysis'
+        sqlite_db_file = 'git2net4analysis.db'
+        
+        git.Repo.clone_from(git_repo_url, git_repo_dir)
+        git2net.mine_git_repo(git_repo_dir, sqlite_db_file)
     """
     git_version = check_output(['git', '--version']).strip().decode("utf-8")
 

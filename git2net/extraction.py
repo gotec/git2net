@@ -64,15 +64,14 @@ with open(os.path.join(abs_path, rel_path)) as json_file:
 
 
 def _get_block_length(lines, k):
-    """ Calculates the length (in number of lines) of a edit of added/deleted
-        lines starting in a given line k.
+    """
+    Calculates the length (in number of lines) of a edit of added/deleted
+    lines starting in a given line k.
 
-    Args:
-        lines: dictionary of added or deleted lines
-        k: line number to check for
+    :param dict lines: dictionary of added or deleted lines
+    :param int k: line number to check for
 
-    Returns:
-        block_size: number of lines in the contiguously block that was modified
+    :returns int block_size: number of lines in the contiguously block that was modified
     """
 
     if k not in lines or (k > 1 and k - 1 in lines):
@@ -91,17 +90,17 @@ def _get_block_length(lines, k):
 
 
 def _identify_edits(deleted_lines, added_lines, extraction_settings):
-    """ Maps line numbers between the pre- and post-commit version of a
-        modification.
+    """
+    Maps line numbers between the pre- and post-commit version of a
+    modification.
 
-    Args:
-        deleted_lines: dictionary of deleted lines
-        added_lines: dictionary of added lines
-        extraction_settings: settings for the extraction
+    :param dict deleted_lines: dictionary of deleted lines
+    :param dict added_lines: dictionary of added lines
+    :param dict extraction_settings: settings for the extraction
 
-    Returns:
-        pre_to_post: dictionary mapping line numbers before and after commit
-        edits: dataframe with information on edits
+    :returns:
+        - pre_to_post (:py:class:`dict`) - dictionary mapping line numbers before and after commit
+        - edits (:py:class:`pandas.DataFrame`) - dataframe with information on edits
     """
 
     # either deleted or added lines must contain items otherwise there would
@@ -227,13 +226,13 @@ def _identify_edits(deleted_lines, added_lines, extraction_settings):
 
 
 def text_entropy(text):
-    """ Computes entropy for a given text based on UTF8 alphabet.
+    """
+    Computes entropy for a given text based on UTF8 alphabet.
 
-    Args:
-        text: string to compute the text entropy for
+    :param str text: string to compute the text entropy for
 
-    Returns:
-        text_entropy: text entropy of the given string
+    :returns:
+        - `text_entropy` (:py:class:`float`) - text entropy of the given string
     """
     # we only consider UTF8 characters to compute the text entropy
     pk = [text.count(chr(i)) for i in range(256)]

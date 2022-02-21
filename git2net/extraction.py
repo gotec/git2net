@@ -100,7 +100,7 @@ def _identify_edits(deleted_lines, added_lines, extraction_settings):
 
     :returns:
         - pre_to_post (:py:class:`dict`) - dictionary mapping line numbers before and after commit
-        - edits (:py:class:`pandas.DataFrame`) - dataframe with information on edits
+        - edits (:py:class:`pandas.DataFrame`) - dataframe with information on editscd ..
     """
 
     # either deleted or added lines must contain items otherwise there would
@@ -1598,18 +1598,6 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
 
     
     :return: SQLite database will be written at specified location
-    :example:
-    .. jupyter-execute::
-    
-        import git2net
-        import git
-        
-        git_repo_url = 'https://github.com/gotec/git2net.git'
-        git_repo_dir = 'git2net4analysis'
-        sqlite_db_file = 'git2net4analysis.db'
-        
-        git.Repo.clone_from(git_repo_url, git_repo_dir)
-        git2net.mine_git_repo(git_repo_dir, sqlite_db_file)
     """
     git_version = check_output(['git', '--version']).strip().decode("utf-8")
 

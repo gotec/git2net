@@ -10,10 +10,7 @@ Install with pip
 ::
 
     pip install git2net
-
-=============
-API Reference
-=============
+    
 
 Extraction
 ----

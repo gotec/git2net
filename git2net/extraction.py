@@ -72,7 +72,7 @@ def _get_block_length(lines, k):
     :param int k: line number to check for
 
     :return:
-        - block_size (`int`) - number of lines in the contiguously block that was modified
+        *int* – number of lines in the contiguously block that was modified
     """
 
     if k not in lines or (k > 1 and k - 1 in lines):
@@ -100,8 +100,8 @@ def _identify_edits(deleted_lines, added_lines, extraction_settings):
     :param dict extraction_settings: settings for the extraction
 
     :return:
-        - pre_to_post (`dict`) - dictionary mapping line numbers before and after commit
-        - edits (`pandas.DataFrame`) - dataframe with information on editscd ..
+        - *dict* – dictionary mapping line numbers before and after commit
+        - *pandas.DataFrame* – dataframe with information on edits
     """
 
     # either deleted or added lines must contain items otherwise there would
@@ -270,7 +270,7 @@ def _parse_blame_C(blame_C):
     :param str blame_C: string defining how the copy option in git blame is used
 
     :return:
-        - list_of_arguments (`list`) - list of parameters for gitpython blame
+        *list* – list of parameters for gitpython blame
     """
     pattern = re.compile("(^$|^-?C{0,3}[0-9]*$)")
     if not pattern.match(blame_C):
@@ -295,7 +295,7 @@ def _parse_porcelain_blame(blame):
     :param str blame: porcelain output of git blame
 
     :return:
-        - blame_info (`dict`) - content of blame as pandas dataframe
+        *dict* – content of blame as pandas dataframe
     """
     l = {'original_commit_hash': [],
          'original_line_no': [],
@@ -341,7 +341,7 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines,
     :param dict extraction_settings: settings for the extraction
 
     :return:
-        - (`pandas.DataFrame`) - pandas dataframe containing information on edits
+        *pandas.DataFrame* – pandas dataframe containing information on edits
     """
     # Different actions for different types of edits.
     e = {}
@@ -619,7 +619,7 @@ def _extract_edits(git_repo, commit, modification, extraction_settings):
     :param dict extraction_settings: settings for the extraction
 
     :return:
-        - edits_info (`pandas.DataFrame`) - pandas DataFrame object containing metadata on all edits in given modification
+        *pandas.DataFrame* – pandas DataFrame object containing metadata on all edits in given modification
     """
 
     binary_file = is_binary_file(modification.filename, modification.diff)
@@ -760,7 +760,7 @@ def _extract_edits_merge(git_repo, commit, modification_info,
     :param dict extraction_settings: settings for the extraction
 
     :return:
-        - edits_info (`pandas.DataFrame`) pandas DataFrame object containing metadata on all edits in given modification
+        *pandas.DataFrame* – pandas DataFrame object containing metadata on all edits in given modification
     """
     assert commit.merge
     # With merges, the following cases can occur:
@@ -969,7 +969,7 @@ def _get_edited_file_paths_since_split(git_repo, commit):
     :param pydriller.Commit commit: pydriller Commit object
 
     :return:
-        - edited_file_paths (`List`) - list of paths to the edited files
+        *List* – list of paths to the edited files
     """
     
     def expand_dag(dag, leafs):
@@ -980,7 +980,7 @@ def _get_edited_file_paths_since_split(git_repo, commit):
         :param set leafs: set of nodes that are expanded
         
         :return:
-            - dag (`pathpy.DAG`) - the expanded pathpy DAG object
+            *pathpy.DAG* – the expanded pathpy DAG object
         """
         for node in leafs:
             parents = git_repo.get_commit(node).parents
@@ -996,7 +996,7 @@ def _get_edited_file_paths_since_split(git_repo, commit):
         :param List paths: list of node sequences
 
         :return:
-            - common_nodes (`set`) - set of nodes that are present on all paths
+            *set* – set of nodes that are present on all paths
         """
         # Drop first and last element of the path.
         common_nodes = set(paths[0][1:-1])
@@ -1013,7 +1013,7 @@ def _get_edited_file_paths_since_split(git_repo, commit):
         :param str node: node for which successors shall be removed
 
         :return:
-            - dag (`pathpy.DAG`) - reduced pathpy DAG object
+            *pathpy.DAG* – reduced pathpy DAG object
         """
         rm = [n for nl in [x[1:] for x in dag.routes_from_node(node)]
               for n in nl]
@@ -1065,8 +1065,8 @@ def _check_mailmap(name, email, git_repo):
     'param pydriller.Git git_repo: PyDriller Git object
 
     :return:
-        - name (`str`) - corresponding username from mailmap
-        - email (`str`) - corresponding email from mailmap
+        - *str* – corresponding username from mailmap
+        - *str* – corresponding email from mailmap
     """
     test_str = '{} <{}>'.format(name, email)
     out_str = git.Git(str(git_repo.path)).check_mailmap(test_str)
@@ -1094,7 +1094,7 @@ def _process_commit(args):
                           extraction_settings: settings for the extraction
 
     :return:
-        - extracted_result (`dict`) - dict containing two dataframes with information of commit and edits
+        *dict* – dict containing two dataframes with information of commit and edits
     """
     with git_init_lock:
         git_repo = pydriller.Git(args['git_repo_dir'])
@@ -1267,7 +1267,7 @@ def _process_repo_serial(git_repo_dir, sqlite_db_file, commits,
     :param dict extraction_settings: settings for the extraction
 
     :return:
-        - sqlite database will be written at specified location
+        SQLite database will be written at specified location
     """
 
     # git_repo = pydriller.Git(git_repo_dir)
@@ -1302,8 +1302,8 @@ def _process_repo_parallel(git_repo_dir, sqlite_db_file, commits,
     :param List[str] commits: list of commits that are already in the database
     :param dict extraction_settings: settings for the extraction
 
-    Returns:
-        sqlite database will be written at specified location
+    :return:
+        SQLite database will be written at specified location
     """
 
     args = [{'git_repo_dir': git_repo_dir, 'commit_hash': commit.hash,

@@ -30,23 +30,21 @@ def _ensure_author_id_exists(sqlite_db_file):
                 
 def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='author_id', commit_hashes=None,
                            file_paths=None, with_start=False, merge_renaming=False):
-    """ Returns line editing DAG as well as line editing paths.
+    """
+    Returns line editing DAG as well as line editing paths.
 
-        Node and edge infos set up to be expanded with future releases.
+    :param str sqlite_db_file: path to SQLite database mined with git2net line method
+    :param str git_repo_dir: path to the git repository that is mined
+    :param List[str] commit_hashes: list of commits to consider, by default all commits are considered
+    :param List[str] file_paths: list of files to consider, by default all files are considered
+    :param bool with_start: determines if node for filename is included as start for all editing paths
+    :param bool merge_renaming: determines if file renaming is considered
 
-    Args:
-        sqlite_db_file: path to sqlite database mined with git2net line method
-        git_repo_dir: path to the git repository that is mined
-        commit_hashes: list of commits to consider, by default all commits are considered
-        file_paths: list of files to consider, by default all files are considered
-        with_start: bool, determines if node for filename is included as start for all editing paths
-        merge_renaming: bool, determines if file renaming is considered
-
-    Returns:
-        paths: line editing paths, pathpy Path object
-        dag: line editing directed acyclic graph, pathpy DAG object
-        node_info: info on node charactaristics
-        edge_info: info on edge characteristics
+    :return:
+        - *pathpy.Paths* – line editing paths
+        - *pathpy.DAG* – line editing directed acyclic graph
+        - *dict* – info on node charactaristics
+        - *dict* – info on edge characteristics
     """
 
     if author_identifier == 'author_id':
@@ -264,21 +262,19 @@ def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='auth
 
 
 def get_commit_editing_dag(sqlite_db_file, time_from=None, time_to=None, filename=None):
-    """ Returns DAG of commits where an edge between commit A and B indicates that lines written in
-        commit A were changed in commit B. Further outputs editing paths extracted from the DAG.
+    """
+    Returns DAG of commits where an edge between commit A and B indicates that lines written in
+    commit A were changed in commit B. Further outputs editing paths extracted from the DAG.
 
-        Node and edge infos set up to be expanded with future releases.
+    :param str sqlite_db_file: path to SQLite database
+    :param datetime.datetime time_from: start time of time window filter, datetime object
+    :param datetime.datetime time_to: end time of time window filter, datetime object
+    :param str filename: filter to obtain only commits editing a certain file
 
-    Args:
-        sqlite_db_file: path to sqlite database
-        time_from: start time of time window filter, datetime object
-        time_to: end time of time window filter, datetime object
-        filename: filter to obtain only commits editing a certain file
-
-    Returns:
-        dag: pathpy dag object linking commits
-        node_info: info on node charactaristics
-        edge_info: info on edge characteristics
+    :return:
+        - *pathpy.DAG* – commit editing dag
+        - *dict* – info on node charactaristics
+        - *dict* – info on edge characteristics
     """
 
     con = sqlite3.connect(sqlite_db_file)
@@ -325,20 +321,18 @@ def get_commit_editing_dag(sqlite_db_file, time_from=None, time_to=None, filenam
 
 
 def get_coediting_network(sqlite_db_file, author_identifier='author_id', time_from=None, time_to=None):
-    """ Returns coediting network containing links between authors who coedited at least one line of
-        code within a given time window.
+    """
+    Returns coediting network containing links between authors who coedited at least one line of
+    code within a given time window.
 
-        Node and edge infos set up to be expanded with future releases.
+    :param str sqlite_db_file: path to SQLite database
+    :param datetime.datetime time_from: start time of time window filter
+    :param datetime.datetime time_to: end time of time window filter
 
-    Args:
-        sqlite_db_file: path to sqlite database
-        time_from: start time of time window filter, datetime object
-        time_to: end time of time window filter, datetime object
-
-    Returns:
-        t: pathpy temporal network
-        node_info: info on node charactaristics
-        edge_info: info on edge characteristics
+    :return:
+        - *pathpy.TemporalNetwork* – coediting network
+        - *dict* – info on node charactaristics
+        - *dict* – info on edge characteristics
     """
     
     if author_identifier == 'author_id':
@@ -411,20 +405,18 @@ def get_coediting_network(sqlite_db_file, author_identifier='author_id', time_fr
 
 
 def get_coauthorship_network(sqlite_db_file, author_identifier='author_id', time_from=None, time_to=None):
-    """ Returns coauthorship network containing links between authors who coedited at least one code
-        file within a given time window.
+    """
+    Returns coauthorship network containing links between authors who coedited at least one code
+    file within a given time window.
 
-        Node and edge infos set up to be expanded with future releases.
+    :param str sqlite_db_file: path to SQLite database
+    :param datetime.datetime time_from: start time of time window filter
+    :param datetime.datetime time_to: end time of time window filter
 
-    Args:
-        sqlite_db_file: path to sqlite database
-        time_from: start time of time window filter, datetime object
-        time_to: end time of time window filter, datetime object
-
-    Returns:
-        n: pathpy network
-        node_info: info on node charactaristics
-        edge_info: info on edge characteristics
+    :return:
+        - *pathpy.Network* –  coauthorship network
+        - *dict* – info on node charactaristics
+        - *dict* – info on edge characteristics
     """
 
     if author_identifier == 'author_id':
@@ -498,20 +490,18 @@ def get_coauthorship_network(sqlite_db_file, author_identifier='author_id', time
 
 
 def get_bipartite_network(sqlite_db_file, author_identifier='author_id', time_from=None, time_to=None):
-    """ Returns temporal bipartite network containing time-stamped file-author relationships for
-        given time window.
+    """
+    Returns temporal bipartite network containing time-stamped file-author relationships for
+    given time window.
 
-        Node and edge infos set up to be expanded with future releases.
+    :param str sqlite_db_file: path to SQLite database
+    :param datetime.datetime time_from: start time of time window filter, datetime object
+    :param datetime.datetime time_to: end time of time window filter, datetime object
 
-    Args:
-        sqlite_db_file: path to sqlite database
-        time_from: start time of time window filter, datetime object
-        time_to: end time of time window filter, datetime object
-
-    Returns:
-        t: pathpy temporal network
-        node_info: info on node charactaristics, e.g. membership in bipartite class
-        edge_info: info on edge characteristics
+    :return:
+        - *pathpy.TemporalNetwork* – bipartite network
+        - *dict* – info on node charactaristics, e.g. membership in bipartite class
+        - *dict* – info on edge characteristics
     """
 
     if author_identifier == 'author_id':

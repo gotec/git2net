@@ -1,3 +1,7 @@
+[![Tests](https://github.com/gotec/git2net/actions/workflows/python-app.yml/badge.svg)](https://github.com/gotec/git2net/actions)
+[![Documentation Status](https://readthedocs.org/projects/git2net/badge/?version=latest)](https://git2net.readthedocs.io/en/latest/?badge=latest)
+
+
 # git2net
 
 `git2net` is an Open Source Python package that facilitates the extraction of co-editing networks

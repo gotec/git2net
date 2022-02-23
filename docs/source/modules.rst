@@ -2,7 +2,7 @@
 Modules
 =======
 
-At its core, git2net provides three modules—`extraction`, `disambiguation`, and `visualisation`.
+git2net provides three modules—`extraction`, `disambiguation`, and `visualisation`.
 
 
 ----------

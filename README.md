@@ -39,7 +39,7 @@ In addition, we provide links to the individual tutorial notebooks below:
 
 ### Documentation
 
-We provide a detailed inline documentation serving as reference.
+`git2net`'s documentation is available at [git2net.readthedocs.io](https://git2net.readthedocs.io).
 
 ### Usage examples
 

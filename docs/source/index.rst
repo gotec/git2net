@@ -10,7 +10,10 @@ Welcome to git2net's documentation!
    :maxdepth: 2
    :caption: Contents:
 
-   git2net
+   overview_installation
+   getting_started
+   modules
+   api_reference
 
 Indices and tables
 ==================

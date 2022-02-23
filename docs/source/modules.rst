@@ -17,7 +17,7 @@ The most important functions in this module are:
     * **check_mining_complete**: checks if a repository has been fully mined.
     * **mining_state_summary**: provides information on any commits that have not been fully mined.
 
-Checkout the `API reference <https://git2net.readthedocs.io/en/latest/api_refence.html#module-git2net.extraction>`_ for information on the complete list of available functions.
+Checkout the `API reference <https://git2net.readthedocs.io/en/latest/api_reference.html#module-git2net.extraction>`_ for information on the complete list of available functions.
 
 
 --------------

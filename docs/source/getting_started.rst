@@ -38,7 +38,7 @@ Finally, we visualise the bipartite author-file network with `get_bipartite_netw
 
 Corresponding to the calls above, git2net's functionality is partitionied into three modules: `extraction`, `disambiguation`, and `visualisation`.
 We outline the most important functions of each module `here <https://git2net.readthedocs.io/en/latest/modules.html>`_.
-For a comprehensive details on all functions of git2net we refer to the `API reference <https://git2net.readthedocs.io/en/latest/api_refence.html>`_.
+For a comprehensive details on all functions of git2net we refer to the `API reference <https://git2net.readthedocs.io/en/latest/api_reference.html>`_.
 
 
 ---------

@@ -25,7 +25,7 @@ This also installs the necessary dependencies. `git2net` depends on the `python-
 ### Tutorials
 
 After installation, we suggest to check out our [tutorials](https://github.com/gotec/git2net-tutorials), detailing how to get started using `git2net`.
-We currently provide five tutorials covering different aspects of analysing your repository with `git2net`.
+We provide tutorials covering different aspects of analysing your repository with `git2net`.
 You can directly interact with the notebooks in *Binder*, or view them in *NBViewer* via the badges below.
 
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/gotec/git2net-tutorials/HEAD)
@@ -40,6 +40,7 @@ In addition, we provide links to the individual tutorial notebooks below:
 | 3. Author disambiguation with [`gambit`](https://github.com/gotec/gambit) | [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/gotec/git2net-tutorials/HEAD?labpath=3_Author_Disambiguation.ipynb) | [![Open Disambiguation Tutorial In Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gotec/git2net-tutorials/blob/master/3_Author_Disambiguation.ipynb) | [![NBViewer](https://img.shields.io/badge/View%20on-nbviewer-informational)](https://nbviewer.org/github/gotec/git2net-tutorials/tree/main/3_Author_Disambiguation.ipynb) |
 | 4. Network analysis with [`pathpy`](https://www.pathpy.net/) | [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/gotec/git2net-tutorials/HEAD?labpath=4_Network_Analysis.ipynb) | [![Open Network Tutorial In Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gotec/git2net-tutorials/blob/master/4_Network_Analysis.ipynb) | [![NBViewer](https://img.shields.io/badge/View%20on-nbviewer-informational)](https://nbviewer.org/github/gotec/git2net-tutorials/tree/main/4_Network_Analysis.ipynb) |
 | 5. Database-based analyses | [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/gotec/git2net-tutorials/HEAD?labpath=5_Database_Analysis.ipynb) | [![Open Database Tutorial In Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gotec/git2net-tutorials/blob/master/5_Database_Analysis.ipynb) | [![NBViewer](https://img.shields.io/badge/View%20on-nbviewer-informational)](https://nbviewer.org/github/gotec/git2net-tutorials/tree/main/5_Database_Analysis.ipynb) |
+| 6. Computing file complexity [`git2net`](https://github.com/gotec/git2net) | [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/gotec/git2net-tutorials/HEAD?labpath=[`git2net`](https://github.com/gotec/git2net).ipynb) | [![Open Database Tutorial In Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gotec/git2net-tutorials/blob/master/[`git2net`](https://github.com/gotec/git2net).ipynb) | [![NBViewer](https://img.shields.io/badge/View%20on-nbviewer-informational)](https://nbviewer.org/github/gotec/git2net-tutorials/tree/main/[`git2net`](https://github.com/gotec/git2net).ipynb) |
 
 ### Documentation
 

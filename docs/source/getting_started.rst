@@ -95,6 +95,14 @@ In addition, we provide links to the individual tutorial notebooks in the tabs b
       * `Open the database analysis tutorial in Google Colab <https://colab.research.google.com/github/gotec/git2net-tutorials/blob/master/5_Database_Analysis.ipynb>`_
       * `Open the database analysis tutorial in NBViewer <https://nbviewer.org/github/gotec/git2net-tutorials/tree/main/5_Database_Analysis.ipynb>`_
 
+   .. tab:: Complexity
+   
+      We show how you can use git2net to compute changes in files' complexity which can be used as a proxy for productivity.
+      
+      * `Open the database analysis tutorial in Binder <https://mybinder.org/v2/gh/gotec/git2net-tutorials/HEAD?labpath=6_Computing_Complexities.ipynb>`_
+      * `Open the database analysis tutorial in Google Colab <https://colab.research.google.com/github/gotec/git2net-tutorials/blob/master/6_Computing_Complexities.ipynb>`_
+      * `Open the database analysis tutorial in NBViewer <https://nbviewer.org/github/gotec/git2net-tutorials/tree/main/6_Computing_Complexities.ipynb>`_
+
 
 --------------
 Usage Examples

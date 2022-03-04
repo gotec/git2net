@@ -12,10 +12,11 @@
 
 import os
 import sys
+from pkg_resources import get_distribution
 sys.path.insert(0, os.path.abspath('../../'))
 package_path = os.path.abspath('../..')
 os.environ['PYTHONPATH'] = ':'.join((package_path, os.environ.get('PYTHONPATH', '')))
-
+__version__ = get_distribution('git2net').version
 
 # -- Project information -----------------------------------------------------
 
@@ -24,7 +25,7 @@ copyright = '2022, Christoph Gote'
 author = 'Christoph Gote'
 
 # The full version, including alpha/beta/rc tags
-release = '1.5.6'
+release = __version__
 
 
 # -- General configuration ---------------------------------------------------

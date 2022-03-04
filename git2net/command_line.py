@@ -1,9 +1,11 @@
 from .extraction import mine_git_repo
+from .disambiguation import disambiguate_aliases_db
 from .visualisation import get_line_editing_paths
 from .visualisation import get_commit_editing_dag
 from .visualisation import get_coediting_network
 from .visualisation import get_coauthorship_network
 from .visualisation import get_bipartite_network
+from .complexity import compute_complexity
 
 import argparse
 import os
@@ -15,15 +17,23 @@ def main():
                                                   "from the command line."))
 
     subparsers = parser.add_subparsers(dest='command',
-                                       help=("Mine a repository or create "
-                                             "graph projections from a "
-                                             "database."))
+                                       help=("Mine a repository, disambiguate "
+                                             "author aliases, create graph "
+                                             "projections, or compute file "
+                                             "complexities for a git "
+                                             "repository."))
     mine = subparsers.add_parser('mine',
-                                 description=("ine a given git repository. "
-                                              "nformation on commits and "
-                                              "dits will be written to an "
-                                              "QLite database at the "
+                                 description=("Mine a given git repository. "
+                                              "Information on commits and "
+                                              "edits will be written to an "
+                                              "SQLite database at the "
                                               "provided path."))
+    
+    disambiguate = subparsers.add_parser('disambiguate',
+                                         description=("Disambiguate author "
+                                                      "identities in a given "
+                                                      "SQLite database."))
+    
     graph = subparsers.add_parser('graph',
                                   description=("Generate graph projections "
                                                "from commit and edit "
@@ -35,6 +45,12 @@ def main():
                                                "as csv files at the given "
                                                "path."))
 
+    complexity = subparsers.add_parser('complexity',
+                                       description=("Compute file complexities "
+                                                    "for a given git repository. "
+                                                    "The results are added to an "
+                                                    "existing SQLite database."))
+    
     mine.add_argument('repo',
                       help=("Path to a local copy of the git reposity that "
                             "will be mined."),
@@ -114,6 +130,18 @@ def main():
                       action='store_true',
                       default=False)
 
+    # "disambiguate" options
+    disambiguate.add_argument('database',
+                              help=("Path to the database where results "
+                                    "will be stored."),
+                              type=str)
+    disambiguate.add_argument('--method',
+                      help=("Extract lines that are not accepted during a "
+                            "merge as deletions."),
+                      type=str,
+                      dest='method',
+                      default='gambit')
+    
     # "graph" options
     sp_graph = graph.add_subparsers(dest='projection',
                                     help='Type of graph projection.')
@@ -164,10 +192,27 @@ def main():
                               "commit-editing paths are extracted."),
                         dest='filename', default=None, type=str)
 
+    # "complexity" options
+    complexity.add_argument('repo',
+                      help=("Path to a local copy of the git reposity that "
+                            "will be analysed."),
+                      type=str)
+    complexity.add_argument('database',
+                      help=("Path to the database where results will be "
+                            "stored."),
+                      type=str)
+    complexity.add_argument('--numprocesses',
+                      help=("Number of CPU cores used for multi-core "
+                            "processing. Defaults to number of CPU cores."),
+                      default=os.cpu_count(),
+                      type=int,
+                      dest='numprocesses')
+        
     args = parser.parse_args()
 
     if not args.command:
-        raise Exception('Requires command argument: "mine" or "graph".')
+        raise Exception(('Requires command argument from: {"mine", '
+                         '"disambiguate", "graph", "complexity"}.'))
 
     if hasattr(args, 'commits') and args.commits:
         with open(args.commits, 'r') as f:
@@ -201,6 +246,8 @@ def main():
                       timeout=args.timeout, extract_text=args.extract_text,
                       extract_merges=args.extract_merges,
                       extract_merge_deletions=args.extract_merge_deletions)
+    elif args.command == 'disambiguate':
+        disambiguate_aliases_db(args.database, method=args.method)
     elif args.command == 'graph':
         if args.projection == 'commit_editing':
             d, _, _ = get_commit_editing_dag(args.database,
@@ -230,3 +277,6 @@ def main():
                                             time_from=args.time_from,
                                             time_to=args.time_to)
             t.write_file(args.csvfile)
+    elif args.command == 'complexity':
+        compute_complexity(args.repo, args.database, no_of_processes=args.numprocesses)
+        

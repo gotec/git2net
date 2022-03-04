@@ -28,3 +28,10 @@ Visualisation
    :undoc-members:
 
 
+----------
+Complexity
+----------
+
+.. automodule:: git2net.complexity
+   :members:
+   :undoc-members:

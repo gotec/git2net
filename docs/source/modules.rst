@@ -2,7 +2,7 @@
 Modules
 =======
 
-git2net provides three modules—`extraction`, `disambiguation`, and `visualisation`.
+git2net provides four modules—`extraction`, `disambiguation`, `visualisation`, and `complexity`.
 
 
 ----------
@@ -44,3 +44,13 @@ The `visualisation` module provides functions to generate various network projec
     * **get_bipartite_network**: creates a bipartite network with nodes representing authors and files. Undirected links exist between an author and all files the author edited.
     * **get_line_editing_paths**: creates paths for all lines in a repository. The paths contain ordered sequences of authors who subsequently edited a line. The number of paths generated for a line depends on the number of forks and merges the line was involved in.
     * **get_commit_editing_dag**: creates a directed acyclic graph where nodes are commits. Commits are connected by a directed link if a one commit modifies lines last editied in another commit. Links are directed from the editing commit to the edited commit.
+
+
+----------
+Complexity
+----------
+
+The module `complexity` provides the functionality to compute a variety of complexity measures for the commits and files in a git repository. Specifically, for all commits, we compute the number of editing events (`events`) and the total Levenshtein edit distance (`levenshtein_distance`) for all modified files. In addition, we compute the Halstead effort (`HE`), the cyclomatic complexity (`CCN`), the number of lines of code (`NLOC`), the number of tokens (`TOK`), and the number of functions (`FUN`) in all modified files before (`*_pre`) and after (`*_post`) each commit. We further compute the change (`*_delta`) for all complexity measures. As we show in [this publication](https://arxiv.org/abs/2201.04588), the absolute value of the change in complexity can be used as a proxy for the productivity of developers in Open Source software projects.
+
+
+    * **compute_complexity**: computes complexity measures for all mined commit/file combinations in a database mined with git2net.

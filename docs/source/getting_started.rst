@@ -36,7 +36,7 @@ First, we extract edits from the repository using `mine_github`.
 Then, we disambiguate author identities using `disambiguate_aliases_db`.
 Finally, we visualise the bipartite author-file network with `get_bipartite_network`.
 
-Corresponding to the calls above, git2net's functionality is partitionied into three modules: `extraction`, `disambiguation`, and `visualisation`.
+Corresponding to the calls above, git2net's functionality is partitionied into three modules: `extraction`, `disambiguation`, `visualisation`, and `complexity`.
 We outline the most important functions of each module `here <https://git2net.readthedocs.io/en/latest/modules.html>`_.
 For a comprehensive details on all functions of git2net we refer to the `API reference <https://git2net.readthedocs.io/en/latest/api_reference.html>`_.
 

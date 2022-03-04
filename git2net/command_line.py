@@ -102,12 +102,6 @@ def main():
                       dest='extract_text',
                       action='store_true',
                       default=False)
-    mine.add_argument('--extract_complexity',
-                      help=("Extract cyclomatic complexity and length of file "
-                            "(computationally expensive)."),
-                      dest='extract_complexity',
-                      action='store_true',
-                      default=False)
     mine.add_argument('--extract_merges',
                       help="Process merges.",
                       dest='extract_merges',
@@ -205,7 +199,6 @@ def main():
                       blame_C=args.blame_C, blame_w=args.blame_w,
                       max_modifications=args.max_modifications,
                       timeout=args.timeout, extract_text=args.extract_text,
-                      extract_complexity=args.extract_complexity,
                       extract_merges=args.extract_merges,
                       extract_merge_deletions=args.extract_merge_deletions)
     elif args.command == 'graph':

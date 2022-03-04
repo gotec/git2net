@@ -221,11 +221,11 @@ def compute_complexity(git_repo_dir, sqlite_db_file, no_of_processes=os.cpu_coun
         tables = [i[0] for i in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")]
 
         # Identify which commit/file combinations have already been processed. These can be skipped.
-        if 'complexity_files' in tables:
-            complexity_files = pd.read_sql("""SELECT commit_hash, new_path FROM complexity_files""",
+        if 'complexity' in tables:
+            complexity = pd.read_sql("""SELECT commit_hash, old_path, new_path FROM complexity""",
                                             con)
             already_done = set((row.commit_hash, row.old_path, row.new_path) \
-                               for idx, row in complexity_files.iterrows())
+                               for idx, row in complexity.iterrows())
 
         else:
             already_done = set()

@@ -719,18 +719,11 @@ def _extract_edits(git_repo, commit, modification, extraction_settings):
             if edit.type == 'binary_file_change':
                 e['new_path'] = edit.new_path
                 e['old_path'] = edit.old_path
-                if extraction_settings['extract_complexity']:
-                    e['cyclomatic_complexity_of_file'] = None
-                    e['lines_of_code_in_file'] = None
                 e['total_added_lines'] = None
                 e['total_removed_lines'] = None
             else:
                 e['new_path'] = modification.new_path
                 e['old_path'] = modification.old_path
-                if extraction_settings['extract_complexity']:
-                    e['cyclomatic_complexity_of_file'] = \
-                        modification.complexity
-                    e['lines_of_code_in_file'] = modification.nloc
                 e['total_added_lines'] = modification.added_lines
                 e['total_removed_lines'] = modification.deleted_lines
             e['filename'] = modification.filename
@@ -1169,17 +1162,6 @@ def _process_commit(args):
                                                 .format(commit.hash,
                                                         edited_file_path))
 
-                        if is_binary_file(edited_file_path, file_content):
-                            if args['extraction_settings']['extract_complexity']:
-                                modification_info['cyclomatic_complexity_of_file'] = None
-                                modification_info['lines_of_code_in_file'] = None
-                        else:
-                            if args['extraction_settings']['extract_complexity']:
-                                l = lizard.analyze_file \
-                                          .analyze_source_code(edited_file_path,
-                                                               file_content)
-                                modification_info['cyclomatic_complexity_of_file'] = l.CCN
-                                modification_info['lines_of_code_in_file'] = l.nloc
                         modification_info['filename'] = edited_file_path.split(os.sep)[-1]
                         modification_info['new_path'] = edited_file_path
                         modification_info['old_path'] = edited_file_path
@@ -1205,9 +1187,6 @@ def _process_commit(args):
                             # File was deleted.
                             modification_info['new_path'] = None
                             modification_info['old_path'] = edited_file_path
-                            if args['extraction_settings']['extract_complexity']:
-                                modification_info['cyclomatic_complexity_of_file'] = 0
-                                modification_info['lines_of_code_in_file'] = 0
                             modification_info['modification_type'] = 'merge_self_accept'
 
                             df_edits = pd.concat(
@@ -1573,8 +1552,8 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                   use_blocks=False, no_of_processes=os.cpu_count(),
                   chunksize=1, exclude=[], blame_C='', blame_w=False,
                   max_modifications=0, timeout=0, extract_text=False,
-                  extract_complexity=False, extract_merges=True,
-                  extract_merge_deletions=False, all_branches=False):
+                  extract_merges=True, extract_merge_deletions=False,
+                  all_branches=False):
     """
     Creates sqlite database with details on commits and edits for a given
     git repository.
@@ -1591,7 +1570,6 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
     :param int max_modifications: ignore commit if there are more modifications
     :param int timeout: stop processing commit after given time in seconds
     :param bool extract_text: extract the commit message and line texts
-    :param bool extract_complexity: extract cyclomatic complexity and length of file (computationally expensive)
     :param bool extract_merges: process merges
     :param bool extract_merge_deletions: extract lines that are not accepted during a merge as 'deletions'
 
@@ -1630,7 +1608,6 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                            'max_modifications': max_modifications,
                            'timeout': timeout,
                            'extract_text': extract_text,
-                           'extract_complexity': extract_complexity,
                            'extract_merges': extract_merges,
                            'extract_merge_deletions': extract_merge_deletions}
 

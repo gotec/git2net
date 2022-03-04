@@ -144,7 +144,7 @@ def test_mine_git_repo(git_repo_dir, sqlite_db_file):
     if os.path.exists(sqlite_db_file):
         os.remove(sqlite_db_file)
     git2net.mine_git_repo(git_repo_dir, sqlite_db_file, blame_C='CCC4', extract_merge_deletions=True,
-                          extract_merges=True, extract_complexity=True, extract_text=True)
+                          extract_merges=True, extract_text=True)
     assert True
 
 def test_disambiguation(sqlite_db_file):

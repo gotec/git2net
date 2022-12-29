@@ -1591,7 +1591,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
             (int(parsed_git_version[1]) == 11) and
             (int(parsed_git_version[2]) == 0)
        ):
-        raise Exception("Your system is using git " + git_version +
+        raise Exception("Your system is using " + git_version +
                         " which is not supported by git2net. " +
                         " Please update to git >= 2.11.1")
 

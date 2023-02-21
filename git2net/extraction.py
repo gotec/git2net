@@ -157,7 +157,7 @@ def _identify_edits(deleted_lines, added_lines, extraction_settings):
             elif length_deleted_block > 0:
                 edits.append({'pre_start': int(pre),
                               'num_start': int(post),
-                              'numbber_of_deleted_lines':
+                              'number_of_deleted_lines':
                                   int(length_deleted_block),
                               'poster_of_added_lines': int(length_added_block),
                               'type': 'deletion'})

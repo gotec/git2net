@@ -1065,6 +1065,7 @@ def _check_mailmap(name, email, git_repo):
         test_str = '<{}>'.format(email)
     else:
         test_str = '{} <{}>'.format(name, email)
+
     out_str = git.Git(str(git_repo.path)).check_mailmap(test_str)
 
     matches = re.findall("^(.*) <(.*)>$", out_str)
@@ -1232,6 +1233,9 @@ def _process_commit(args):
     except KeyboardInterrupt:
         print('Timeout processing commit: ', commit.hash)
         extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
+    except Exception as e:
+        print('Error processing commit: ',commit.hash)
+        raise
 
     del alarm
 

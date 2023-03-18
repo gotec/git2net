@@ -1065,7 +1065,6 @@ def _check_mailmap(name, email, git_repo):
         test_str = '<{}>'.format(email)
     else:
         test_str = '{} <{}>'.format(name, email)
-
     out_str = git.Git(str(git_repo.path)).check_mailmap(test_str)
 
     matches = re.findall("^(.*) <(.*)>$", out_str)

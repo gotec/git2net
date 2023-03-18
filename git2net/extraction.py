@@ -1099,6 +1099,18 @@ def _process_commit(args):
     alarm = Alarm(args['extraction_settings']['timeout'])
     alarm.start()
 
+    # Dealing with - as author error in check-mailmap, early return
+    if commit.author.name == '-' and commit.author.email == '-':
+        print(('Author name and email being -,'
+            ' avoiding processing because check-mailmap'
+            ' would fail for commit: '), commit.hash)
+        return {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
+    if commit.committer.name == '-' and commit.committer.email == '-':
+        print(('Committer name and email being -,'
+            ' avoiding processing because check-mailmap'
+            ' would fail for commit: '), commit.hash)
+        return {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
+
     try:
         author_name, author_email = _check_mailmap(commit.author.name,
                                                    commit.author.email,

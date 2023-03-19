@@ -37,7 +37,13 @@ def disambiguate_aliases_db(sqlite_db_file, method='gambit', **quargs):
         if 'author_id' not in cols:
             cur.execute("""ALTER TABLE commits
                            ADD COLUMN author_id""")
+
+        cur.execute('''
+            CREATE INDEX IF NOT EXISTS author_info_index ON commits(author_name,author_email);
+            ''')
+
         con.commit()
+
         for idx, row in aliases.iterrows():
             cur.execute("""UPDATE commits
                            SET author_id = :author_id

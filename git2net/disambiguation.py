@@ -44,7 +44,8 @@ def disambiguate_aliases_db(sqlite_db_file, method='gambit', **quargs):
 
         con.commit()
 
-        for idx, row in aliases.iterrows():
+        for i,r in enumerate(aliases.iterrows()):
+            idx, row = r
             cur.execute("""UPDATE commits
                            SET author_id = :author_id
                            WHERE author_name IS :author_name
@@ -52,4 +53,9 @@ def disambiguate_aliases_db(sqlite_db_file, method='gambit', **quargs):
                         {'author_id': row.author_id,
                          'author_name': row.alias_name,
                          'author_email': row.alias_email})
-            con.commit()
+            
+            # Committing only every 1000 authors, this speeds up the process
+            if i%1000 == 0:
+                con.commit()
+
+        con.commit()

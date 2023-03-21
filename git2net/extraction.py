@@ -1232,6 +1232,9 @@ def _process_commit(args):
     except KeyboardInterrupt:
         print('Timeout processing commit: ', commit.hash)
         extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
+    except Exception:
+        print('Error processing commit: ',commit.hash)
+        raise
 
     del alarm
 

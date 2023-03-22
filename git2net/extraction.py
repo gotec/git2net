@@ -29,32 +29,15 @@ from git.exc import GitCommandError
 from git2net import __version__
 
 import time
-import threading
+import sys
 
 import json
 
+import stopit
+import contextlib
+import io
+
 git_init_lock = multiprocessing.Lock()
-
-try:
-    import thread
-except ImportError:
-    import _thread as thread
-
-
-class TimeoutException(Exception):   # Custom exception class
-    pass
-
-
-class Alarm(threading.Thread):
-    def __init__(self, timeout):
-        threading.Thread.__init__(self)
-        self.timeout = timeout
-        self.daemon = True
-
-    def run(self):
-        if self.timeout > 0:
-            time.sleep(self.timeout)
-            thread.interrupt_main()
 
 
 abs_path = os.path.dirname(__file__)
@@ -1092,103 +1075,85 @@ def _process_commit(args):
     :return:
         *dict* – dict containing two dataframes with information of commit and edits
     """
-    with git_init_lock:
-        git_repo = pydriller.Git(args['git_repo_dir'])
-        commit = git_repo.get_commit(args['commit_hash'])
+    with contextlib.redirect_stderr(io.StringIO()) as redirected_stderr_ctx_mgr:
+        with git_init_lock:
+            git_repo = pydriller.Git(args['git_repo_dir'])
+            commit = git_repo.get_commit(args['commit_hash'])
+    
+    
+        with stopit.ThreadingTimeout(args['extraction_settings']['timeout']) as timeout_ctx_mgr:
+            author_name, author_email = _check_mailmap(commit.author.name,
+                                               commit.author.email,
+                                               git_repo)
 
-    alarm = Alarm(args['extraction_settings']['timeout'])
-    alarm.start()
 
-    try:
-        author_name, author_email = _check_mailmap(commit.author.name,
-                                                   commit.author.email,
-                                                   git_repo)
+            committer_name, committer_email = _check_mailmap(commit.committer.name,
+                                                             commit.committer.email,
+                                                             git_repo)
 
-        committer_name, committer_email = _check_mailmap(commit.committer.name,
-                                                         commit.committer.email,
-                                                         git_repo)
 
-        # parse commit
-        c = {}
-        c['hash'] = commit.hash
-        c['author_email'] = author_email
-        c['author_name'] = author_name
-        c['committer_email'] = committer_email
-        c['committer_name'] = committer_name
-        c['author_date'] = commit.author_date.strftime('%Y-%m-%d %H:%M:%S')
-        c['committer_date'] = commit.committer_date \
-                                    .strftime('%Y-%m-%d %H:%M:%S')
-        c['author_timezone'] = commit.author_timezone
-        c['committer_timezone'] = commit.committer_timezone
-        c['no_of_modifications'] = len(commit.modified_files)
-        c['commit_message_len'] = len(commit.msg)
-        if args['extraction_settings']['extract_text']:
-            c['commit_message'] = commit.msg \
-                                        .encode('utf8', 'surrogateescape') \
-                                        .decode('utf8', 'replace')
-        c['project_name'] = commit.project_name
-        c['parents'] = ','.join(commit.parents)
-        c['merge'] = commit.merge
-        c['in_main_branch'] = commit.in_main_branch
-        c['branches'] = ','.join(commit.branches)
+            # parse commit
+            c = {}
+            c['hash'] = commit.hash
+            c['author_email'] = author_email
+            c['author_name'] = author_name
+            c['committer_email'] = committer_email
+            c['committer_name'] = committer_name
+            c['author_date'] = commit.author_date.strftime('%Y-%m-%d %H:%M:%S')
+            c['committer_date'] = commit.committer_date \
+                                        .strftime('%Y-%m-%d %H:%M:%S')
+            c['author_timezone'] = commit.author_timezone
+            c['committer_timezone'] = commit.committer_timezone
+            c['no_of_modifications'] = len(commit.modified_files)
+            c['commit_message_len'] = len(commit.msg)
+            if args['extraction_settings']['extract_text']:
+                c['commit_message'] = commit.msg \
+                                            .encode('utf8', 'surrogateescape') \
+                                            .decode('utf8', 'replace')
+            c['project_name'] = commit.project_name
+            c['parents'] = ','.join(commit.parents)
+            c['merge'] = commit.merge
+            c['in_main_branch'] = commit.in_main_branch
+            c['branches'] = ','.join(commit.branches)
 
-        # parse modification
-        df_edits = pd.DataFrame()
-        if commit.merge and args['extraction_settings']['extract_merges']:
-            # Git does not create a modification if own changes are accpeted
-            # during a merge. Therefore, the edited files are extracted
-            # manually.
-            edited_file_paths = {f for p in commit.parents for f in
-                                 git.Git(str(git_repo.path))
-                                    .diff(commit.hash, p, '--name-only')
-                                    .split('\n')}
+            # parse modification
+            df_edits = pd.DataFrame()
+            if commit.merge and args['extraction_settings']['extract_merges']:
+                # Git does not create a modification if own changes are accpeted
+                # during a merge. Therefore, the edited files are extracted
+                # manually.
+                edited_file_paths = {f for p in commit.parents for f in
+                                     git.Git(str(git_repo.path))
+                                        .diff(commit.hash, p, '--name-only')
+                                        .split('\n')}
 
-            if (args['extraction_settings']['max_modifications'] > 0) and \
-               (len(edited_file_paths) >
-                    args['extraction_settings']['max_modifications']):
-                print('Commit exceeding max_modifications: ', commit.hash)
-                extracted_result = {'commit': pd.DataFrame(),
-                                    'edits': pd.DataFrame()}
-                return extracted_result
+                if (args['extraction_settings']['max_modifications'] > 0) and \
+                   (len(edited_file_paths) >
+                        args['extraction_settings']['max_modifications']):
+                    print('Commit exceeding max_modifications: ', commit.hash)
+                    extracted_result = {'commit': pd.DataFrame(),
+                                        'edits': pd.DataFrame()}
+                    return extracted_result
 
-            for edited_file_path in edited_file_paths:
-                exclude_file = False
-                for x in args['extraction_settings']['exclude']:
-                    if edited_file_path.startswith(x + os.sep) or \
-                       (edited_file_path == x):
-                        exclude_file = True
-                if not exclude_file:
-                    modification_info = {}
-                    try:
-                        file_content = git.Git(str(git_repo.path)) \
-                                          .show('{}:{}'
-                                                .format(commit.hash,
-                                                        edited_file_path))
+                for edited_file_path in edited_file_paths:
+                    exclude_file = False
+                    for x in args['extraction_settings']['exclude']:
+                        if edited_file_path.startswith(x + os.sep) or \
+                           (edited_file_path == x):
+                            exclude_file = True
+                    if not exclude_file:
+                        modification_info = {}
+                        try:
+                            try:
+                                file_content = git.Git(str(git_repo.path)) \
+                                                  .show('{}:{}'
+                                                        .format(commit.hash,
+                                                                edited_file_path))
+                            except stopit.TimeoutExcepton:
+                                pass   
 
-                        modification_info['filename'] = edited_file_path.split(os.sep)[-1]
-                        modification_info['new_path'] = edited_file_path
-                        modification_info['old_path'] = edited_file_path
-                        modification_info['modification_type'] = 'merge_self_accept'
-
-                        df_edits = pd.concat(
-                            [df_edits,
-                             _extract_edits_merge(
-                                 git_repo, commit, modification_info,
-                                 args['extraction_settings'])],
-                            axis=0, ignore_index=True, sort=True)
-                    except GitCommandError:
-                        # A GitCommandError occurs if the file was deleted. In
-                        # this case it currently has no content.
-
-                        # Get filenames from all modifications in merge commit.
-                        paths = [m.old_path for m in commit.modified_files]
-
-                        # Analyse changes if modification was recorded. Else,
-                        # the deletions were made before the merge.
-                        if edited_file_path in paths:
                             modification_info['filename'] = edited_file_path.split(os.sep)[-1]
-                            # File was deleted.
-                            modification_info['new_path'] = None
+                            modification_info['new_path'] = edited_file_path
                             modification_info['old_path'] = edited_file_path
                             modification_info['modification_type'] = 'merge_self_accept'
 
@@ -1198,45 +1163,77 @@ def _process_commit(args):
                                      git_repo, commit, modification_info,
                                      args['extraction_settings'])],
                                 axis=0, ignore_index=True, sort=True)
+                        except GitCommandError:
+                            # A GitCommandError occurs if the file was deleted. In
+                            # this case it currently has no content.
 
+                            # Get filenames from all modifications in merge commit.
+                            paths = [m.old_path for m in commit.modified_files]
+
+                            # Analyse changes if modification was recorded. Else,
+                            # the deletions were made before the merge.
+                            if edited_file_path in paths:
+                                modification_info['filename'] = edited_file_path.split(os.sep)[-1]
+                                # File was deleted.
+                                modification_info['new_path'] = None
+                                modification_info['old_path'] = edited_file_path
+                                modification_info['modification_type'] = 'merge_self_accept'
+
+                                df_edits = pd.concat(
+                                    [df_edits,
+                                     _extract_edits_merge(
+                                         git_repo, commit, modification_info,
+                                         args['extraction_settings'])],
+                                    axis=0, ignore_index=True, sort=True)
+
+            else:
+                if (args['extraction_settings']['max_modifications'] > 0) and \
+                   (len(commit.modified_files) >
+                       args['extraction_settings']['max_modifications']):
+                    print('Commit exceeding max_modifications: ', commit.hash)
+                    extracted_result = {'commit': pd.DataFrame(),
+                                        'edits': pd.DataFrame()}
+                    return extracted_result
+
+                for modification in commit.modified_files:
+                    exclude_file = False
+                    for x in args['extraction_settings']['exclude']:
+                        if modification.new_path:
+                            if modification.new_path.startswith(x + os.sep) or \
+                               (modification.new_path == x):
+                                exclude_file = True
+                        if not exclude_file and modification.old_path:
+                            if modification.old_path.startswith(x + os.sep):
+                                exclude_file = True
+                    if not exclude_file:
+                        df_edits = pd.concat(
+                            [df_edits,
+                             _extract_edits(git_repo, commit,
+                                            modification,
+                                            args['extraction_settings'])],
+                            axis=0, ignore_index=True, sort=True)
+
+            df_commit = pd.DataFrame(c, index=[0])
+
+            extracted_result = {'commit': df_commit, 'edits': df_edits}
+
+            
+    code_completed = (timeout_ctx_mgr.state==timeout_ctx_mgr.EXECUTED)        
+    redirected_stderr = redirected_stderr_ctx_mgr.getvalue().strip()
+    
+    if redirected_stderr:
+        # Something was written to stderr. This could be a real error, however, often 
+        # it is just a notification that an exception was ignored while deleting an object
+        # after the threading timeout triggered. In this case, we ignore the message.
+        if redirected_stderr.startswith('Exception ignored in:') and \
+           redirected_stderr.endswith('stopit.utils.TimeoutException:'):
+            code_completed = False
         else:
-            if (args['extraction_settings']['max_modifications'] > 0) and \
-               (len(commit.modified_files) >
-                   args['extraction_settings']['max_modifications']):
-                print('Commit exceeding max_modifications: ', commit.hash)
-                extracted_result = {'commit': pd.DataFrame(),
-                                    'edits': pd.DataFrame()}
-                return extracted_result
-
-            for modification in commit.modified_files:
-                exclude_file = False
-                for x in args['extraction_settings']['exclude']:
-                    if modification.new_path:
-                        if modification.new_path.startswith(x + os.sep) or \
-                           (modification.new_path == x):
-                            exclude_file = True
-                    if not exclude_file and modification.old_path:
-                        if modification.old_path.startswith(x + os.sep):
-                            exclude_file = True
-                if not exclude_file:
-                    df_edits = pd.concat(
-                        [df_edits,
-                         _extract_edits(git_repo, commit,
-                                        modification,
-                                        args['extraction_settings'])],
-                        axis=0, ignore_index=True, sort=True)
-
-        df_commit = pd.DataFrame(c, index=[0])
-
-        extracted_result = {'commit': df_commit, 'edits': df_edits}
-    except KeyboardInterrupt:
+            raise Exception(redirected_stderr)
+    
+    if not code_completed:
         print('Timeout processing commit: ', commit.hash)
         extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
-    except Exception:
-        print('Error processing commit: ',commit.hash)
-        raise
-
-    del alarm
 
     return extracted_result
 

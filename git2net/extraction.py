@@ -1229,10 +1229,11 @@ def _process_commit(args):
            redirected_stderr.endswith('stopit.utils.TimeoutException:'):
             code_completed = False
         else:
+            print('Error processing commit:', commit.hash)
             raise Exception(redirected_stderr)
     
     if not code_completed:
-        print('Timeout processing commit: ', commit.hash)
+        print('Timeout processing commit:', commit.hash)
         extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
 
     return extracted_result

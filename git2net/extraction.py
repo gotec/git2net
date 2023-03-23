@@ -12,6 +12,7 @@ import multiprocessing
 
 import pandas as pd
 from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 import numpy as np
 from scipy.stats import entropy
 
@@ -36,6 +37,8 @@ import json
 import stopit
 import contextlib
 import io
+
+import logging
 
 git_init_lock = multiprocessing.Lock()
 
@@ -556,7 +559,8 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines,
         e['levenshtein_dist'] = 0
 
     else:
-        print(edit.type)
+        LOG = logging.getLogger('git2net')
+        LOG.error(edit.type)
         raise Exception("Unexpected error in '_get_edit_details'.")
 
     return e
@@ -1063,7 +1067,8 @@ def _check_mailmap(name, email, git_repo):
 
 def _process_commit(args):
     """
-    Extracts information on commit and all edits made with the commit.
+    Extracts information on commit and all edits made with the commit. As this function is run in
+    parallel workers, any outputs are returned and output in a serial manner.
 
     :param dict args: dictionary with arguments. For multiprocessing, function can only
                       take single input.
@@ -1074,7 +1079,12 @@ def _process_commit(args):
 
     :return:
         *dict* – dict containing two dataframes with information of commit and edits
+        *tuple* – tuple of logging type and logging message if any were created, otherwise None
+        *str* – text of exception if any was raised, otherwise None
     """
+    log = None
+    exception = None
+    
     with contextlib.redirect_stderr(io.StringIO()) as redirected_stderr_ctx_mgr:
         with git_init_lock:
             git_repo = pydriller.Git(args['git_repo_dir'])
@@ -1130,11 +1140,12 @@ def _process_commit(args):
                 if (args['extraction_settings']['max_modifications'] > 0) and \
                    (len(edited_file_paths) >
                         args['extraction_settings']['max_modifications']):
-                    print('Commit exceeding max_modifications: ', commit.hash)
+                    log = ('warning', 'Commit exceeding max_modifications: ' + commit.hash)
                     extracted_result = {'commit': pd.DataFrame(),
                                         'edits': pd.DataFrame()}
-                    return extracted_result
-
+                    return extracted_result, log, exception
+                
+                
                 for edited_file_path in edited_file_paths:
                     exclude_file = False
                     for x in args['extraction_settings']['exclude']:
@@ -1144,13 +1155,10 @@ def _process_commit(args):
                     if not exclude_file:
                         modification_info = {}
                         try:
-                            try:
-                                file_content = git.Git(str(git_repo.path)) \
-                                                  .show('{}:{}'
-                                                        .format(commit.hash,
-                                                                edited_file_path))
-                            except stopit.TimeoutExcepton:
-                                pass   
+                            file_content = git.Git(str(git_repo.path)) \
+                                              .show('{}:{}'
+                                                    .format(commit.hash,
+                                                            edited_file_path)) 
 
                             modification_info['filename'] = edited_file_path.split(os.sep)[-1]
                             modification_info['new_path'] = edited_file_path
@@ -1190,10 +1198,10 @@ def _process_commit(args):
                 if (args['extraction_settings']['max_modifications'] > 0) and \
                    (len(commit.modified_files) >
                        args['extraction_settings']['max_modifications']):
-                    print('Commit exceeding max_modifications: ', commit.hash)
+                    log = ('warning', 'Commit exceeding max_modifications: ' + commit.hash)
                     extracted_result = {'commit': pd.DataFrame(),
                                         'edits': pd.DataFrame()}
-                    return extracted_result
+                    return extracted_result, log, exception
 
                 for modification in commit.modified_files:
                     exclude_file = False
@@ -1220,6 +1228,7 @@ def _process_commit(args):
             
     code_completed = (timeout_ctx_mgr.state==timeout_ctx_mgr.EXECUTED)        
     redirected_stderr = redirected_stderr_ctx_mgr.getvalue().strip()
+
     
     if redirected_stderr:
         # Something was written to stderr. This could be a real error, however, often 
@@ -1229,16 +1238,41 @@ def _process_commit(args):
            redirected_stderr.endswith('stopit.utils.TimeoutException:'):
             code_completed = False
         else:
-            print('Error processing commit:', commit.hash)
-            raise Exception(redirected_stderr)
-    
-    if not code_completed:
-        print('Timeout processing commit:', commit.hash)
+            extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
+            log = ('error', 'Error processing commit: ' + commit.hash)
+            exception = redirected_stderr
+            
+    if pd.isnull(exception) and not code_completed:
+        log = ('warning', 'Timeout processing commit: ' + commit.hash)
         extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
 
-    return extracted_result
+    return extracted_result, log, exception
 
 
+def _log_commit_results(log, exception):
+    """
+    Processes log and exception returned from _process_commit and creates corresponding entries.
+    
+    :param tuple log: tuple of logging type and logging message if any were created, otherwise None
+    :param str exception: text of exception if any was raised, otherwise None
+    
+    :return:
+        log message will be written and exception raised if one occurred
+    """
+    
+    LOG = logging.getLogger('git2net')
+
+    if pd.notnull(log):
+        if log[0] == 'warning':
+            LOG.warning(log[1])
+        elif log[0] == 'error':
+            LOG.error(log[1])
+            raise Exception(exception)
+        else:
+            Exception(("Not implemented logging type. Please report on "
+                       "https://github.com/gotec/git2net."))
+
+            
 def _process_repo_serial(git_repo_dir, sqlite_db_file, commits,
                          extraction_settings):
     """
@@ -1253,20 +1287,23 @@ def _process_repo_serial(git_repo_dir, sqlite_db_file, commits,
         SQLite database will be written at specified location
     """
 
-    # git_repo = pydriller.Git(git_repo_dir)
-
+    LOG = logging.getLogger('git2net')
+    
     for commit in tqdm(commits, desc='Serial'):
-        args = {'git_repo_dir': git_repo_dir, 'commit_hash': commit.hash,
-                'extraction_settings': extraction_settings}
-        result = _process_commit(args)
+        with logging_redirect_tqdm(tqdm_class=tqdm):            
+            args = {'git_repo_dir': git_repo_dir, 'commit_hash': commit.hash,
+                    'extraction_settings': extraction_settings}
+            extracted_result, log, exception = _process_commit(args)
 
-        with sqlite3.connect(sqlite_db_file) as con:
-            if not result['edits'].empty:
-                result['edits'].to_sql('edits', con, if_exists='append',
-                                       index=False)
-            if not result['commit'].empty:
-                result['commit'].to_sql('commits', con, if_exists='append',
-                                        index=False)
+            _log_commit_results(log, exception)
+            
+            with sqlite3.connect(sqlite_db_file) as con:
+                if not extracted_result['edits'].empty:
+                    extracted_result['edits'].to_sql('edits', con, if_exists='append',
+                                                     index=False)
+                if not extracted_result['commit'].empty:
+                    extracted_result['commit'].to_sql('commits', con, if_exists='append',
+                                                      index=False)
 
 
 # suggestion by marco-c (github.com/ishepard/pydriller/issues/110)
@@ -1289,6 +1326,8 @@ def _process_repo_parallel(git_repo_dir, sqlite_db_file, commits,
         SQLite database will be written at specified location
     """
 
+    LOG = logging.getLogger('git2net')
+    
     args = [{'git_repo_dir': git_repo_dir, 'commit_hash': commit.hash,
              'extraction_settings': extraction_settings}
             for commit in commits]
@@ -1298,18 +1337,21 @@ def _process_repo_parallel(git_repo_dir, sqlite_db_file, commits,
                               initargs=(git_repo_dir, git_init_lock)) as p:
         with tqdm(total=len(args), desc='Parallel ({0} processes)'
                   .format(extraction_settings['no_of_processes'])) as pbar:
-            for result in p.imap_unordered(
-                _process_commit, args,
-                    chunksize=extraction_settings['chunksize']):
-                with sqlite3.connect(sqlite_db_file) as con:
-                    if not result['edits'].empty:
-                        result['edits'].to_sql('edits', con,
-                                               if_exists='append', index=False)
-                    if not result['commit'].empty:
-                        result['commit'].to_sql('commits', con,
-                                                if_exists='append',
-                                                index=False)
-                pbar.update(1)
+            with logging_redirect_tqdm(tqdm_class=tqdm):
+                for extracted_result, log, exception in p.imap_unordered(
+                    _process_commit, args, chunksize=extraction_settings['chunksize']):
+                    
+                    _log_commit_results(log, exception)
+                    
+                    with sqlite3.connect(sqlite_db_file) as con:
+                        if not extracted_result['edits'].empty:
+                            extracted_result['edits'].to_sql('edits', con,
+                                                             if_exists='append', index=False)
+                        if not extracted_result['commit'].empty:
+                            extracted_result['commit'].to_sql('commits', con,
+                                                              if_exists='append',
+                                                              index=False)
+                    pbar.update(1)
 
 
 def identify_file_renaming(git_repo_dir):
@@ -1500,9 +1542,10 @@ def mining_state_summary(git_repo_dir, sqlite_db_file, all_branches=False):
         raise Exception("The database does not match the provided repository.")
 
     no_of_commits = len({c.hash for c in commits})
-    print('{} / {} ({:.2f}%) of commits were successfully mined.'.format(
-            len(p_commits), no_of_commits,
-            len(p_commits) / no_of_commits * 100))
+    LOG = logging.getLogger('git2net')
+    LOG.info('{} / {} ({:.2f}%) of commits were successfully mined.'.format(
+        len(p_commits), no_of_commits,
+        len(p_commits) / no_of_commits * 100))
 
     u_commits = [c for c in commits if c.hash not in p_commits]
 
@@ -1517,7 +1560,7 @@ def mining_state_summary(git_repo_dir, sqlite_db_file, all_branches=False):
         try:
             u_commit_info['is_merge'].append(c.merge)
         except:
-            print('Error reading "merge" for', c.hash)
+            LOG.error('Error reading "merge" for', c.hash)
             u_commit_info['is_merge'].append(None)
 
         if c.merge:
@@ -1531,20 +1574,20 @@ def mining_state_summary(git_repo_dir, sqlite_db_file, all_branches=False):
         try:
             u_commit_info['author_name'].append(c.author.name)
         except:
-            print('Error reading "author.name" for', c.hash)
+            LOG.error('Error reading "author.name" for', c.hash)
             u_commit_info['author_name'].append(None)
 
         try:
             u_commit_info['author_email'].append(c.author.email)
         except:
-            print('Error reading "author.email" for', c.hash)
+            LOG.error('Error reading "author.email" for', c.hash)
             u_commit_info['author_email'].append(None)
 
         try:
             u_commit_info['author_date'].append(
                 c.author_date.strftime('%Y-%m-%d %H:%M:%S'))
         except:
-            print('Error reading "author_date" for', c.hash)
+            LOG.error('Error reading "author_date" for', c.hash)
             u_commit_info['author_date'].append(None)
 
     u_commits_info = pd.DataFrame(u_commit_info)
@@ -1580,6 +1623,8 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
     :return:
         SQLite database will be written at specified location
     """
+    LOG = logging.getLogger('git2net')
+    
     git_version = check_output(['git', '--version']).strip().decode("utf-8")
 
     parsed_git_version = re.search(r'(\d+)\.(\d+)\.(\d+)', git_version) \
@@ -1658,15 +1703,15 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                                              "to proceed."))
                     else:
                         if p_commits == c_commits:
-                            print("All commits have already been mined!")
+                            LOG.info("All commits have already been mined!")
                         else:
-                            print(("Found a matching database on provided "
-                                   "path. Skipping {} ({:.2f}%) of {} commits. "
-                                   "{} commits remaining.")
-                                  .format(len(p_commits),
-                                          len(p_commits)/len(c_commits)*100,
-                                          len(c_commits),
-                                          len(c_commits)-len(p_commits)))
+                            LOG.info('Found a matching database on provided path.')
+                            LOG.info('\t Skipping {} ({:.2f}%) of {} commits.'
+                                     .format(len(p_commits),
+                                             len(p_commits)/len(c_commits)*100,
+                                             len(c_commits)))
+                            LOG.info('\t {} commits remaining.'
+                                     .format(len(c_commits)-len(p_commits)))
                 else:
                     raise Exception(("Found a database on provided path that "
                                      "was created with settings not matching "
@@ -1681,7 +1726,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                              "previously paused run with identical settings "
                              "is required."))
     else:
-        print("Found no database on provided path. Starting from scratch.")
+        LOG.info("Found no database on provided path. Starting from scratch.")
         try:
             repo_url = git_repo.repo.remotes.origin.url
         except:
@@ -1730,8 +1775,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                          in p_commits]
     else:
         if not set(commits).issubset(c_commits):
-            raise Exception(("At least one provided commit does not exist in "
-                             "the repository."))
+            raise Exception(("At least one provided commit does not exist in the repository."))
         commits = [git_repo.get_commit(h) for h in commits]
         u_commits = [c for c in commits if c.hash not in p_commits]
 
@@ -1739,8 +1783,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
     current_branch = git_repo.repo.active_branch.name
     c_intersect = p_commits.intersection(c_commits)
     if len(c_intersect) > 0:
-        print(("Updated branch information for already mined commits that are "
-               "in the active branch."))
+        LOG.info(("Updated branch information for mined commits in the active branch."))
         for c in p_commits.intersection(c_commits):
             b = con.execute("""SELECT branches
                                FROM commits
@@ -1754,7 +1797,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                                WHERE hash = (:hash)""",
                             {'branches': ','.join(b), 'hash': c})
         con.commit()
-
+        
     if extraction_settings['no_of_processes'] > 1:
         _process_repo_parallel(git_repo_dir, sqlite_db_file, u_commits,
                                extraction_settings)
@@ -1778,6 +1821,8 @@ def mine_github(github_url, git_repo_dir, sqlite_db_file, branch=None,
         - git repository will be cloned to specified location
         - SQLite database will be written at specified location
     """
+    LOG = logging.getLogger('git2net')    
+    
     # github_url can either be provided as full url or as in form <USER>/<REPO>
     user_repo_pattern = r'^([^\/]*)\/([^\/]*)$'
     full_url_pattern = r'^https:\/\/github\.com\/([^\/]*)\/([^\/i]*)(\.git)?$'
@@ -1807,8 +1852,8 @@ def mine_github(github_url, git_repo_dir, sqlite_db_file, branch=None,
     # check if the folder is empty if it exists
     if os.path.exists(git_repo_dir) and \
        (len(os.listdir(os.path.join(local_directory, git_repo_folder))) > 0):
-        print(("Provided folder is not empty. Skipping the cloning and trying "
-               "to resume."))
+        LOG.info('Provided folder is not empty.')
+        LOG.info('\t Skipping the cloning and trying to resume.')
     else:
         if branch:
             git.Git(local_directory).clone(github_url, git_repo_folder,

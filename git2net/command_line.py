@@ -260,7 +260,6 @@ def main():
                 args.filename = [args.filename]
             _, d, _, _ = get_line_editing_paths(args.database,
                                                 file_paths=args.filename)
-            print(d)
             d.write_file(args.csvfile)
         elif args.projection == 'coedit':
             t, _, _ = get_coediting_network(args.database,

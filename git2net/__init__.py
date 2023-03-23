@@ -24,3 +24,9 @@ from .visualisation import get_coediting_network
 from .visualisation import get_coauthorship_network
 from .visualisation import get_bipartite_network
 from .complexity import compute_complexity
+
+import logging
+
+logging.basicConfig(level=logging.INFO,
+                    format='[%(asctime)s]  %(name)s:%(levelname)-10s %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S')

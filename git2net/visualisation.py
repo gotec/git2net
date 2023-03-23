@@ -15,6 +15,7 @@ import math
 import numpy as np
 import calendar
 
+import logging
 
 def _ensure_author_id_exists(sqlite_db_file):
     with sqlite3.connect(sqlite_db_file) as con:
@@ -47,6 +48,8 @@ def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='auth
         - *dict* – info on edge characteristics
     """
 
+    LOG = logging.getLogger('git2net')
+    
     if author_identifier == 'author_id':
         _ensure_author_id_exists(sqlite_db_file)
     
@@ -68,7 +71,7 @@ def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='auth
         assert type(file_paths) is list
 
     if merge_renaming:
-        print('Searching for aliases')
+        LOG.info('Searching for aliases')
         # Identify files that have been renamed.
         _, aliases = identify_file_renaming(git_repo_dir)
 
@@ -83,7 +86,7 @@ def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='auth
     edge_info['weights'] = {}
 
     # Extract required data from the provided database.
-    print('Querying commits')
+    LOG.info('Querying commits')
     if author_identifier == 'author_id':
         commits = pd.read_sql("""SELECT hash,
                                         author_id as author_identifier,
@@ -102,7 +105,7 @@ def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='auth
     else:
         raise Exception("author_identifier must be from {'author_id', 'author_name', 'author_email'}.")
     
-    print('Querying edits')
+    LOG.info('Querying edits')
     edits = pd.DataFrame()
     no_of_edits = pd.read_sql("""SELECT count(*) FROM edits""", con).iloc[0, 0]
     chunksize = 1000
@@ -152,10 +155,6 @@ def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='auth
                                 right_on='hash').drop(['hash'], axis=1)
 
         file_paths_dag = set()
-
-        # Sort edits by author date.
-        #print('Sorting edits')
-        #edits.sort_values('author_date', ascending=True, inplace=True)
 
         for _, edit in edits.iterrows():
             if edit.edit_type == 'replacement':

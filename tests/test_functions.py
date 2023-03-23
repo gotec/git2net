@@ -120,7 +120,7 @@ def test_process_commit(git_repo_dir):
     args = {'git_repo_dir': git_repo_dir, 'commit_hash': commit_hash,
             'extraction_settings': extraction_settings}
 
-    res_dict = git2net.extraction._process_commit(args)
+    res_dict, _, _ = git2net.extraction._process_commit(args)
     assert list(res_dict.keys()) == ['commit', 'edits']
 
 
@@ -262,7 +262,7 @@ def test_process_commit_merge(git_repo_dir):
     args = {'git_repo_dir': git_repo_dir, 'commit_hash': commit_hash,
             'extraction_settings': extraction_settings}
 
-    res_dict = git2net.extraction._process_commit(args)
+    res_dict, _, _ = git2net.extraction._process_commit(args)
 
     assert list(res_dict['edits']['edit_type']) == ['deletion']*7
     assert list(res_dict['edits']['pre_starting_line_no']) == [6,7,8,12,13,1,2]
@@ -285,7 +285,7 @@ def test_process_commit_merge2(git_repo_dir):
     args = {'git_repo_dir': git_repo_dir, 'commit_hash': commit_hash,
             'extraction_settings': extraction_settings}
 
-    res_dict = git2net.extraction._process_commit(args)
+    res_dict, _, _ = git2net.extraction._process_commit(args)
 
     assert list(res_dict['edits']['edit_type']) == ['replacement']*6
     assert list(res_dict['edits']['pre_starting_line_no']) == [1,2,3,1,2,3]

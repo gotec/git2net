@@ -34,9 +34,11 @@ import sys
 
 import json
 
-import stopit
 import contextlib
 import io
+
+import threading
+import ctypes
 
 import logging
 
@@ -48,6 +50,45 @@ rel_path = 'helpers/binary-extensions/binary-extensions.json'
 with open(os.path.join(abs_path, rel_path)) as json_file:
     binary_extensions = json.load(json_file)
 
+    
+class TimeoutException(Exception):
+    pass
+
+            
+class Timeout():
+    """
+    Context manager that raises TimeoutException after wait of length timeout.
+    If timeout is <= 0, no timer is started.
+    
+    """
+    def __init__(self, timeout):
+        self.timeout = timeout
+        self.timed_out = False
+        self.active = False
+        self.target_tid = threading.current_thread().ident
+        self.timer = None
+        
+    def __enter__(self):
+        if self.timeout > 0:
+            self.timer = threading.Timer(self.timeout, self.stop)
+            self.timer.start()
+            self.active = True
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.active:
+            self.timer.cancel()
+            self.active = False
+        if exc_type == TimeoutException:
+            return True
+        return False
+        
+    def stop(self):
+        self.timed_out = True
+        # raise TimeoutException in main thread. Inspired by implementation in 'stopit'
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(self.target_tid),
+                                                     ctypes.py_object(TimeoutException))
+    
 
 def _get_block_length(lines, k):
     """
@@ -1082,108 +1123,85 @@ def _process_commit(args):
         *tuple* – tuple of logging type and logging message if any were created, otherwise None
         *str* – text of exception if any was raised, otherwise None
     """
-    log = None
-    exception = None
-    
-    with contextlib.redirect_stderr(io.StringIO()) as redirected_stderr_ctx_mgr:
-        with git_init_lock:
-            git_repo = pydriller.Git(args['git_repo_dir'])
-            commit = git_repo.get_commit(args['commit_hash'])
-    
-    
-        with stopit.ThreadingTimeout(args['extraction_settings']['timeout']) as timeout_ctx_mgr:
-            author_name, author_email = _check_mailmap(commit.author.name,
-                                               commit.author.email,
-                                               git_repo)
+    try:
+        log = None
+        exception = None
+
+        with contextlib.redirect_stderr(io.StringIO()) as redirected_stderr_ctx_mgr:
+            with git_init_lock:
+                git_repo = pydriller.Git(args['git_repo_dir'])
+                commit = git_repo.get_commit(args['commit_hash'])
+
+            with Timeout(args['extraction_settings']['timeout']) as timeout:
+                author_name, author_email = _check_mailmap(commit.author.name,
+                                                   commit.author.email,
+                                                   git_repo)
 
 
-            committer_name, committer_email = _check_mailmap(commit.committer.name,
-                                                             commit.committer.email,
-                                                             git_repo)
+                committer_name, committer_email = _check_mailmap(commit.committer.name,
+                                                                 commit.committer.email,
+                                                                 git_repo)
+                                
+                # parse commit
+                c = {}
+                c['hash'] = commit.hash
+                c['author_email'] = author_email
+                c['author_name'] = author_name
+                c['committer_email'] = committer_email
+                c['committer_name'] = committer_name
+                c['author_date'] = commit.author_date.strftime('%Y-%m-%d %H:%M:%S')
+                c['committer_date'] = commit.committer_date \
+                                            .strftime('%Y-%m-%d %H:%M:%S')
+                c['author_timezone'] = commit.author_timezone
+                c['committer_timezone'] = commit.committer_timezone
+                c['no_of_modifications'] = len(commit.modified_files)
+                c['commit_message_len'] = len(commit.msg)
+                if args['extraction_settings']['extract_text']:
+                    c['commit_message'] = commit.msg \
+                                                .encode('utf8', 'surrogateescape') \
+                                                .decode('utf8', 'replace')
+                c['project_name'] = commit.project_name
+                c['parents'] = ','.join(commit.parents)
+                c['merge'] = commit.merge
+                c['in_main_branch'] = commit.in_main_branch
+                c['branches'] = ','.join(commit.branches)
+
+                # parse modification
+                df_edits = pd.DataFrame()
+                if commit.merge and args['extraction_settings']['extract_merges']:
+                    # Git does not create a modification if own changes are accpeted
+                    # during a merge. Therefore, the edited files are extracted
+                    # manually.
+                    edited_file_paths = {f for p in commit.parents for f in
+                                         git.Git(str(git_repo.path))
+                                            .diff(commit.hash, p, '--name-only')
+                                            .split('\n')}
+
+                    if (args['extraction_settings']['max_modifications'] > 0) and \
+                       (len(edited_file_paths) >
+                            args['extraction_settings']['max_modifications']):
+                        log = ('warning', 'max_modifications exceeded: ' + commit.hash)
+                        extracted_result = {'commit': pd.DataFrame(),
+                                            'edits': pd.DataFrame()}
+                        return extracted_result, log, exception
 
 
-            # parse commit
-            c = {}
-            c['hash'] = commit.hash
-            c['author_email'] = author_email
-            c['author_name'] = author_name
-            c['committer_email'] = committer_email
-            c['committer_name'] = committer_name
-            c['author_date'] = commit.author_date.strftime('%Y-%m-%d %H:%M:%S')
-            c['committer_date'] = commit.committer_date \
-                                        .strftime('%Y-%m-%d %H:%M:%S')
-            c['author_timezone'] = commit.author_timezone
-            c['committer_timezone'] = commit.committer_timezone
-            c['no_of_modifications'] = len(commit.modified_files)
-            c['commit_message_len'] = len(commit.msg)
-            if args['extraction_settings']['extract_text']:
-                c['commit_message'] = commit.msg \
-                                            .encode('utf8', 'surrogateescape') \
-                                            .decode('utf8', 'replace')
-            c['project_name'] = commit.project_name
-            c['parents'] = ','.join(commit.parents)
-            c['merge'] = commit.merge
-            c['in_main_branch'] = commit.in_main_branch
-            c['branches'] = ','.join(commit.branches)
+                    for edited_file_path in edited_file_paths:
+                        exclude_file = False
+                        for x in args['extraction_settings']['exclude']:
+                            if edited_file_path.startswith(x + os.sep) or \
+                               (edited_file_path == x):
+                                exclude_file = True
+                        if not exclude_file:
+                            modification_info = {}
+                            try:
+                                file_content = git.Git(str(git_repo.path)) \
+                                                  .show('{}:{}'
+                                                        .format(commit.hash,
+                                                                edited_file_path)) 
 
-            # parse modification
-            df_edits = pd.DataFrame()
-            if commit.merge and args['extraction_settings']['extract_merges']:
-                # Git does not create a modification if own changes are accpeted
-                # during a merge. Therefore, the edited files are extracted
-                # manually.
-                edited_file_paths = {f for p in commit.parents for f in
-                                     git.Git(str(git_repo.path))
-                                        .diff(commit.hash, p, '--name-only')
-                                        .split('\n')}
-
-                if (args['extraction_settings']['max_modifications'] > 0) and \
-                   (len(edited_file_paths) >
-                        args['extraction_settings']['max_modifications']):
-                    log = ('warning', 'Commit exceeding max_modifications: ' + commit.hash)
-                    extracted_result = {'commit': pd.DataFrame(),
-                                        'edits': pd.DataFrame()}
-                    return extracted_result, log, exception
-                
-                
-                for edited_file_path in edited_file_paths:
-                    exclude_file = False
-                    for x in args['extraction_settings']['exclude']:
-                        if edited_file_path.startswith(x + os.sep) or \
-                           (edited_file_path == x):
-                            exclude_file = True
-                    if not exclude_file:
-                        modification_info = {}
-                        try:
-                            file_content = git.Git(str(git_repo.path)) \
-                                              .show('{}:{}'
-                                                    .format(commit.hash,
-                                                            edited_file_path)) 
-
-                            modification_info['filename'] = edited_file_path.split(os.sep)[-1]
-                            modification_info['new_path'] = edited_file_path
-                            modification_info['old_path'] = edited_file_path
-                            modification_info['modification_type'] = 'merge_self_accept'
-
-                            df_edits = pd.concat(
-                                [df_edits,
-                                 _extract_edits_merge(
-                                     git_repo, commit, modification_info,
-                                     args['extraction_settings'])],
-                                axis=0, ignore_index=True, sort=True)
-                        except GitCommandError:
-                            # A GitCommandError occurs if the file was deleted. In
-                            # this case it currently has no content.
-
-                            # Get filenames from all modifications in merge commit.
-                            paths = [m.old_path for m in commit.modified_files]
-
-                            # Analyse changes if modification was recorded. Else,
-                            # the deletions were made before the merge.
-                            if edited_file_path in paths:
                                 modification_info['filename'] = edited_file_path.split(os.sep)[-1]
-                                # File was deleted.
-                                modification_info['new_path'] = None
+                                modification_info['new_path'] = edited_file_path
                                 modification_info['old_path'] = edited_file_path
                                 modification_info['modification_type'] = 'merge_self_accept'
 
@@ -1193,61 +1211,81 @@ def _process_commit(args):
                                          git_repo, commit, modification_info,
                                          args['extraction_settings'])],
                                     axis=0, ignore_index=True, sort=True)
+                            except GitCommandError:
+                                # A GitCommandError occurs if the file was deleted. In
+                                # this case it currently has no content.
 
-            else:
-                if (args['extraction_settings']['max_modifications'] > 0) and \
-                   (len(commit.modified_files) >
-                       args['extraction_settings']['max_modifications']):
-                    log = ('warning', 'Commit exceeding max_modifications: ' + commit.hash)
-                    extracted_result = {'commit': pd.DataFrame(),
-                                        'edits': pd.DataFrame()}
-                    return extracted_result, log, exception
+                                # Get filenames from all modifications in merge commit.
+                                paths = [m.old_path for m in commit.modified_files]
 
-                for modification in commit.modified_files:
-                    exclude_file = False
-                    for x in args['extraction_settings']['exclude']:
-                        if modification.new_path:
-                            if modification.new_path.startswith(x + os.sep) or \
-                               (modification.new_path == x):
-                                exclude_file = True
-                        if not exclude_file and modification.old_path:
-                            if modification.old_path.startswith(x + os.sep):
-                                exclude_file = True
-                    if not exclude_file:
-                        df_edits = pd.concat(
-                            [df_edits,
-                             _extract_edits(git_repo, commit,
-                                            modification,
-                                            args['extraction_settings'])],
-                            axis=0, ignore_index=True, sort=True)
+                                # Analyse changes if modification was recorded. Else,
+                                # the deletions were made before the merge.
+                                if edited_file_path in paths:
+                                    modification_info['filename'] = edited_file_path.split(os.sep)[-1]
+                                    # File was deleted.
+                                    modification_info['new_path'] = None
+                                    modification_info['old_path'] = edited_file_path
+                                    modification_info['modification_type'] = 'merge_self_accept'
 
-            df_commit = pd.DataFrame(c, index=[0])
+                                    df_edits = pd.concat(
+                                        [df_edits,
+                                         _extract_edits_merge(
+                                             git_repo, commit, modification_info,
+                                             args['extraction_settings'])],
+                                        axis=0, ignore_index=True, sort=True)
 
-            extracted_result = {'commit': df_commit, 'edits': df_edits}
+                else:
+                    if (args['extraction_settings']['max_modifications'] > 0) and \
+                       (len(commit.modified_files) >
+                           args['extraction_settings']['max_modifications']):
+                        log = ('warning', 'max_modifications exceeded: ' + commit.hash)
+                        extracted_result = {'commit': pd.DataFrame(),
+                                            'edits': pd.DataFrame()}
+                        return extracted_result, log, exception
 
-            
-    code_completed = (timeout_ctx_mgr.state==timeout_ctx_mgr.EXECUTED)        
-    redirected_stderr = redirected_stderr_ctx_mgr.getvalue().strip()
+                    for modification in commit.modified_files:
+                        exclude_file = False
+                        for x in args['extraction_settings']['exclude']:
+                            if modification.new_path:
+                                if modification.new_path.startswith(x + os.sep) or \
+                                   (modification.new_path == x):
+                                    exclude_file = True
+                            if not exclude_file and modification.old_path:
+                                if modification.old_path.startswith(x + os.sep):
+                                    exclude_file = True
+                        if not exclude_file:
+                            df_edits = pd.concat(
+                                [df_edits,
+                                 _extract_edits(git_repo, commit,
+                                                modification,
+                                                args['extraction_settings'])],
+                                axis=0, ignore_index=True, sort=True)
 
-    
-    if redirected_stderr:
-        # Something was written to stderr. This could be a real error, however, often 
-        # it is just a notification that an exception was ignored while deleting an object
-        # after the threading timeout triggered. In this case, we ignore the message.
-        if redirected_stderr.startswith('Exception ignored in:') and \
-           redirected_stderr.endswith('stopit.utils.TimeoutException:'):
-            code_completed = False
-        else:
+                df_commit = pd.DataFrame(c, index=[0])
+
+                extracted_result = {'commit': df_commit, 'edits': df_edits}
+
+
+        redirected_stderr = redirected_stderr_ctx_mgr.getvalue().strip()
+
+        if redirected_stderr:
+            # Something was written to stderr. This could be a real error, however, often 
+            # it is just a notification that an exception was ignored while deleting an object
+            # after the threading timeout triggered. In this case, we ignore the message.
+            if not (redirected_stderr.startswith('Exception ignored in:') and \
+                    redirected_stderr.endswith('git2net.extraction.TimeoutException:')):
+                extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
+                log = ('error', 'processing error: ' + commit.hash)
+                exception = redirected_stderr
+
+        if pd.isnull(exception) and timeout.timed_out:
+            log = ('warning', 'processing timeout: ' + commit.hash)
             extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
-            log = ('error', 'Error processing commit: ' + commit.hash)
-            exception = redirected_stderr
-            
-    if pd.isnull(exception) and not code_completed:
-        log = ('warning', 'Timeout processing commit: ' + commit.hash)
-        extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
 
-    return extracted_result, log, exception
+        return extracted_result, log, exception
 
+    except Exception as e:
+        return e
 
 def _log_commit_results(log, exception):
     """
@@ -1293,17 +1331,21 @@ def _process_repo_serial(git_repo_dir, sqlite_db_file, commits,
         with logging_redirect_tqdm(tqdm_class=tqdm):            
             args = {'git_repo_dir': git_repo_dir, 'commit_hash': commit.hash,
                     'extraction_settings': extraction_settings}
-            extracted_result, log, exception = _process_commit(args)
+            res = _process_commit(args)
 
-            _log_commit_results(log, exception)
-            
-            with sqlite3.connect(sqlite_db_file) as con:
-                if not extracted_result['edits'].empty:
-                    extracted_result['edits'].to_sql('edits', con, if_exists='append',
-                                                     index=False)
-                if not extracted_result['commit'].empty:
-                    extracted_result['commit'].to_sql('commits', con, if_exists='append',
-                                                      index=False)
+            if isinstance(res, Exception):
+                raise res
+            else:
+                extracted_result, log, exception = res
+                _log_commit_results(log, exception)
+
+                with sqlite3.connect(sqlite_db_file) as con:
+                    if not extracted_result['edits'].empty:
+                        extracted_result['edits'].to_sql('edits', con, if_exists='append',
+                                                         index=False)
+                    if not extracted_result['commit'].empty:
+                        extracted_result['commit'].to_sql('commits', con, if_exists='append',
+                                                          index=False)
 
 
 # suggestion by marco-c (github.com/ishepard/pydriller/issues/110)
@@ -1338,20 +1380,24 @@ def _process_repo_parallel(git_repo_dir, sqlite_db_file, commits,
         with tqdm(total=len(args), desc='Parallel ({0} processes)'
                   .format(extraction_settings['no_of_processes'])) as pbar:
             with logging_redirect_tqdm(tqdm_class=tqdm):
-                for extracted_result, log, exception in p.imap_unordered(
-                    _process_commit, args, chunksize=extraction_settings['chunksize']):
+                for res in p.imap_unordered(_process_commit, args, chunksize=extraction_settings['chunksize']):
                     
-                    _log_commit_results(log, exception)
-                    
-                    with sqlite3.connect(sqlite_db_file) as con:
-                        if not extracted_result['edits'].empty:
-                            extracted_result['edits'].to_sql('edits', con,
-                                                             if_exists='append', index=False)
-                        if not extracted_result['commit'].empty:
-                            extracted_result['commit'].to_sql('commits', con,
-                                                              if_exists='append',
-                                                              index=False)
-                    pbar.update(1)
+                    if isinstance(res, Exception):
+                        raise res
+                    else:
+                        extracted_result, log, exception = res
+
+                        _log_commit_results(log, exception)
+
+                        with sqlite3.connect(sqlite_db_file) as con:
+                            if not extracted_result['edits'].empty:
+                                extracted_result['edits'].to_sql('edits', con,
+                                                                 if_exists='append', index=False)
+                            if not extracted_result['commit'].empty:
+                                extracted_result['commit'].to_sql('commits', con,
+                                                                  if_exists='append',
+                                                                  index=False)
+                        pbar.update(1)
 
 
 def identify_file_renaming(git_repo_dir):

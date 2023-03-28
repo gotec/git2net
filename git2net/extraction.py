@@ -1528,6 +1528,8 @@ def check_mining_complete(git_repo_dir, sqlite_db_file, commits=[],
     :return:
         *bool* – True if all commits are included in the database, otherwise False
     """
+    LOG = logging.getLogger('git2net')
+    
     git_repo = pydriller.Git(git_repo_dir)
     if os.path.exists(sqlite_db_file):
         try:
@@ -1537,8 +1539,9 @@ def check_mining_complete(git_repo_dir, sqlite_db_file, commits=[],
                                     con.execute("SELECT hash FROM commits")
                                     .fetchall())
                 except sqlite3.OperationalError:
+                    LOG.warning("Found a database on provided path that did not contain a 'commits' table.")
                     p_commits = set()
-        except sqlite3.OperationalError:
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
             raise Exception("The provided file is not a compatible database.")
     else:
         raise Exception("Found no database at provided path.")
@@ -1568,6 +1571,8 @@ def mining_state_summary(git_repo_dir, sqlite_db_file, all_branches=False):
     :return:
         *pandas.DataFrame* – dataframe with details on missing commits
     """
+    LOG = logging.getLogger('git2net')
+    
     git_repo = pydriller.Git(git_repo_dir)
     if os.path.exists(sqlite_db_file):
         try:
@@ -1577,6 +1582,7 @@ def mining_state_summary(git_repo_dir, sqlite_db_file, all_branches=False):
                                     con.execute("SELECT hash FROM commits")
                                     .fetchall())
                 except sqlite3.OperationalError:
+                    LOG.warning("Found a database on provided path that did not contain a 'commits' table.")
                     p_commits = set()
         except sqlite3.OperationalError:
             raise Exception("The provided file is not a compatible database.")
@@ -1728,12 +1734,10 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                         p_commits = set()
                     if all_branches:
                         c_commits = set(c.hash for c in
-                                        pydriller.Git(git_repo_dir)
-                                                 .get_list_commits(all=True))
+                                        git_repo.get_list_commits(all=True))
                     else:
                         c_commits = set(c.hash for c in
-                                        pydriller.Git(git_repo_dir)
-                                                 .get_list_commits())
+                                        git_repo.get_list_commits())
                     if not p_commits.issubset(c_commits):
                         if prev_repository != git_repo.repo.remotes.origin.url:
                             raise Exception(("Found a database that was "
@@ -1806,10 +1810,10 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
     # commits in the currently mined repository
     if all_branches:
         c_commits = set(c.hash for c in
-                        pydriller.Git(git_repo_dir).get_list_commits(all=True))
+                        git_repo.get_list_commits(all=True))
     else:
         c_commits = set(c.hash for c in
-                        pydriller.Git(git_repo_dir).get_list_commits())
+                        git_repo.get_list_commits())
 
     if not commits:
         # unprocessed commits
@@ -1871,7 +1875,7 @@ def mine_github(github_url, git_repo_dir, sqlite_db_file, branch=None,
     
     # github_url can either be provided as full url or as in form <USER>/<REPO>
     user_repo_pattern = r'^([^\/]*)\/([^\/]*)$'
-    full_url_pattern = r'^https:\/\/github\.com\/([^\/]*)\/([^\/i]*)(\.git)?$'
+    full_url_pattern = r'^https:\/\/github\.com\/([^\/]*)\/([^\/.]*)(\.git)?$'
 
     match = re.match(user_repo_pattern, github_url)
     if match:

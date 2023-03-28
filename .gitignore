@@ -8,3 +8,5 @@
 /git2net.egg-info/*
 tmp.*
 /docs/build/*
+/test_repos/test_repo_1/*
+.coverage

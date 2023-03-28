@@ -27,7 +27,7 @@ def _ensure_author_id_exists(sqlite_db_file):
         elif pd.isnull(pd.read_sql('''SELECT author_id FROM commits''', con).author_id).sum() > 0:
             raise Exception("The author_id is missing entries. To use author_id as identifier, please " + 
                             "rerun git2net.disambiguate_aliases_db on the database before visualisation.")
-                
+    return True
                 
 def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='author_id', commit_hashes=None,
                            file_paths=None, with_start=False, merge_renaming=False):
@@ -227,8 +227,9 @@ def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='auth
             elif edit.edit_type == 'file_renaming' or edit.edit_type == 'binary_file_change':
                 pass
             else:
-                raise Exception("Unexpected error in 'extract_editing_paths'. ({})"
-                                    .format(edit.edit_type))
+                raise Exception("Unexpected error in 'extract_editing_paths' ({})."
+                                    .format(edit.edit_type) + " Please report on " +
+                                "https://github.com/gotec/git2net.")
 
     for node in tqdm(dag.nodes):
         if node in file_paths_dag:

@@ -193,7 +193,7 @@ def _compute_complexity_measures(args):
 
 
 def compute_complexity(git_repo_dir, sqlite_db_file, no_of_processes=os.cpu_count(), read_chunksize = 1e6,
-                         write_chunksize = 100):
+                       write_chunksize = 100):
     """
     Computes complexity measures for all mined commit/file combinations in a given database. Computing
     complexities for merge commits is currently not supported.
@@ -288,14 +288,15 @@ def compute_complexity(git_repo_dir, sqlite_db_file, no_of_processes=os.cpu_coun
     def _init(git_repo_dir, git_init_lock_):
         global git_init_lock
         git_init_lock = git_init_lock_
-        
+      
+    
     with multiprocessing.Pool(no_of_processes, initializer=_init,
                               initargs=(git_repo_dir,git_init_lock)) as p:
         results = []
         with tqdm(total=len(args_pool), desc='complexity computation') as pbar:
             for result in p.imap_unordered(_compute_complexity_measures, args_pool, chunksize=1):
                 results.append(result)
-
+                
                 # We write the results to the database. If results are already present, we append
                 # the new results to them.
                 if len(results) >= write_chunksize:
@@ -314,7 +315,8 @@ def compute_complexity(git_repo_dir, sqlite_db_file, no_of_processes=os.cpu_coun
                     results=[]
 
                 pbar.update(1)
-
+                
+    
     # As we write the results in chunks, some might remain unwritten in the loop above. We write
     # them now.
     if len(results) != 0:

@@ -14,6 +14,7 @@ from tqdm import tqdm
 import math
 import numpy as np
 import calendar
+import networkx as nx
 
 import logging
 
@@ -320,7 +321,7 @@ def get_commit_editing_dag(sqlite_db_file, time_from=None, time_to=None, filenam
     return dag, node_info, edge_info
 
 
-def get_coediting_network(sqlite_db_file, author_identifier='author_id', time_from=None, time_to=None):
+def get_coediting_network(sqlite_db_file, author_identifier='author_id', time_from=None, time_to=None, engine='pathpy'):
     """
     Returns coediting network containing links between authors who coedited at least one line of
     code within a given time window.
@@ -391,19 +392,41 @@ def get_coediting_network(sqlite_db_file, author_identifier='author_id', time_fr
     node_info = {}
     edge_info = {}
     
-    t = pp.TemporalNetwork()
-    for row in data.itertuples():
-        if (row.time >= time_from) and (row.time <= time_to) and not \
-           (row.post_author == row.pre_author):
-            if not (pd.isnull(row.post_author) or pd.isnull(row.pre_author)):
-                t.add_edge(row.post_author,
-                           row.pre_author,
-                           row.time,
-                           directed=True)
+    if engine=='pathpy':
+        t = pp.TemporalNetwork()
+        for row in data.itertuples():
+            if (row.time >= time_from) and (row.time <= time_to) and not \
+               (row.post_author == row.pre_author):
+                if not (pd.isnull(row.post_author) or pd.isnull(row.pre_author)):
+                    t.add_edge(row.post_author,
+                               row.pre_author,
+                               row.time,
+                               directed=True)
 
-    return t, node_info, edge_info
-
-
+        return t, node_info, edge_info
+    elif engine=='networkx':
+        n = nx.DiGraph()
+        for row in data.itertuples():
+            if (row.time >= time_from) and (row.time <= time_to) and not \
+               (row.post_author == row.pre_author):
+                if not (pd.isnull(row.post_author) or pd.isnull(row.pre_author)):
+                    n.add_node(row.post_author)
+                    n.add_node(row.pre_author)
+                    n.add_edge(row.post_author,
+                               row.pre_author)
+                    if author_identifier=='author_id':
+                        edge = (int(row.post_author), int(row.pre_author))
+                    else:
+                        edge = (row.post_author, row.pre_author)
+                    
+                    if edge in edge_info:
+                        edge_info[edge]['times'].append(row.time)
+                    else:
+                        edge_info[edge] = {'times': [row.time]}
+        return n, node_info, edge_info
+    else:
+        raise Exception('Not implemented network engine.')
+    
 def get_coauthorship_network(sqlite_db_file, author_identifier='author_id', time_from=None, time_to=None):
     """
     Returns coauthorship network containing links between authors who coedited at least one code

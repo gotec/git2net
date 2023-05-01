@@ -1847,13 +1847,14 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                                WHERE hash = (:hash)""",
                             {'branches': ','.join(b), 'hash': c})
         con.commit()
-        
-    if extraction_settings['no_of_processes'] > 1:
-        _process_repo_parallel(git_repo_dir, sqlite_db_file, u_commits,
-                               extraction_settings)
-    else:
-        _process_repo_serial(git_repo_dir, sqlite_db_file, u_commits,
-                             extraction_settings)
+     
+    if len(u_commits) > 0:
+        if extraction_settings['no_of_processes'] > 1:
+            _process_repo_parallel(git_repo_dir, sqlite_db_file, u_commits,
+                                   extraction_settings)
+        else:
+            _process_repo_serial(git_repo_dir, sqlite_db_file, u_commits,
+                                 extraction_settings)
 
 
 def mine_github(github_url, git_repo_dir, sqlite_db_file, branch=None,

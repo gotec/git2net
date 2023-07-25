@@ -9,7 +9,7 @@ Extraction
 .. automodule:: git2net.extraction
    :members:
    :undoc-members:
-   :exclude-members: TimeoutException, Alarm
+   :exclude-members: TimeoutException, Timeout
 
 --------------
 Disambiguation

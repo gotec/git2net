@@ -23,13 +23,13 @@ def _ensure_author_id_exists(sqlite_db_file):
         cur = con.cursor()
         cols = [i[1] for i in cur.execute('PRAGMA table_info(commits)')]
         if 'author_id' not in cols:
-            raise Exception("The author_id is not yet computed. To use author_id as identifier, please " + 
+            raise Exception("The author_id is not yet computed. To use author_id as identifier, please " +
                             "run git2net.disambiguate_aliases_db on the database before visualisation.")
         elif pd.isnull(pd.read_sql('''SELECT author_id FROM commits''', con).author_id).sum() > 0:
-            raise Exception("The author_id is missing entries. To use author_id as identifier, please " + 
+            raise Exception("The author_id is missing entries. To use author_id as identifier, please " +
                             "rerun git2net.disambiguate_aliases_db on the database before visualisation.")
     return True
-                
+
 def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='author_id', commit_hashes=None,
                            file_paths=None, with_start=False, merge_renaming=False):
     """
@@ -50,10 +50,10 @@ def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='auth
     """
 
     LOG = logging.getLogger('git2net')
-    
+
     if author_identifier == 'author_id':
         _ensure_author_id_exists(sqlite_db_file)
-    
+
     # Connect to provided database.
     con = sqlite3.connect(sqlite_db_file)
 
@@ -105,7 +105,7 @@ def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='auth
                                  FROM commits""", con)
     else:
         raise Exception("author_identifier must be from {'author_id', 'author_name', 'author_email'}.")
-    
+
     LOG.info('Querying edits')
     edits = pd.DataFrame()
     no_of_edits = pd.read_sql("""SELECT count(*) FROM edits""", con).iloc[0, 0]
@@ -175,7 +175,7 @@ def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='auth
                 node_info['time'][source_deletion] = edit.author_date_deletion
                 # Check id source of addition exists.
                 if edit.original_commit_addition is not None:
-                    source_addition = 'L' + str(int(edit.original_line_no_addition)) + ' ' + \
+                    source_addition = 'L' + str(edit.original_line_no_addition) + ' ' + \
                                     edit.original_file_path_addition + ' ' + \
                                     edit.original_commit_addition
                     dag.add_edge(source_addition, target)
@@ -217,7 +217,7 @@ def get_line_editing_paths(sqlite_db_file, git_repo_dir, author_identifier='auth
 
                 # Check id source of addition exists.
                 if edit.original_commit_addition is not None:
-                    source_addition = 'L' + str(int(edit.original_line_no_addition)) + ' ' + \
+                    source_addition = 'L' + str(edit.original_line_no_addition) + ' ' + \
                                     edit.original_file_path_addition + ' ' + \
                                     edit.original_commit_addition
                     dag.add_edge(source_addition, target)
@@ -287,11 +287,11 @@ def get_commit_editing_dag(sqlite_db_file, time_from=None, time_to=None, filenam
                           FROM edits
                           JOIN commits
                           ON edits.commit_hash = commits.hash""", con).drop_duplicates()
-    
+
     if filename is not None:
         data = data.loc[data.filename==filename, :]
 
-    data['time'] = [int(t/(10**9) - tz) for t, tz in 
+    data['time'] = [int(t/(10**9) - tz) for t, tz in
                         zip(pd.to_datetime(data.time, format='%Y-%m-%d %H:%M:%S').view('int64'),
                             data.timezone)]
 
@@ -335,16 +335,16 @@ def get_coediting_network(sqlite_db_file, author_identifier='author_id', time_fr
         - *dict* – info on node charactaristics
         - *dict* – info on edge characteristics
     """
-    
+
     if author_identifier == 'author_id':
         _ensure_author_id_exists(sqlite_db_file)
-    
+
     con = sqlite3.connect(sqlite_db_file)
     edits = pd.read_sql("""SELECT original_commit_deletion AS pre_commit,
                                   commit_hash AS post_commit,
                                   levenshtein_dist
                            FROM edits""", con).drop_duplicates()
-    
+
     if author_identifier == 'author_id':
         commits = pd.read_sql("""SELECT hash,
                                         author_id as author_identifier,
@@ -374,7 +374,7 @@ def get_coediting_network(sqlite_db_file, author_identifier='author_id', time_fr
                     .drop(['post_commit', 'hash'], axis=1)
     data.columns = ['levenshtein_dist', 'pre_author', 'post_author', 'time', 'timezone']
 
-    data['time'] = [int(t/(10**9) - tz) for t, tz in 
+    data['time'] = [int(t/(10**9) - tz) for t, tz in
                         zip(pd.to_datetime(data.time, format='%Y-%m-%d %H:%M:%S').view('int64'),
                             data.timezone)]
 
@@ -391,7 +391,7 @@ def get_coediting_network(sqlite_db_file, author_identifier='author_id', time_fr
 
     node_info = {}
     edge_info = {}
-    
+
     if engine=='pathpy':
         t = pp.TemporalNetwork()
         for row in data.itertuples():
@@ -418,7 +418,7 @@ def get_coediting_network(sqlite_db_file, author_identifier='author_id', time_fr
                         edge = (int(row.post_author), int(row.pre_author))
                     else:
                         edge = (row.post_author, row.pre_author)
-                    
+
                     if edge in edge_info:
                         edge_info[edge]['times'].append(row.time)
                     else:
@@ -426,7 +426,7 @@ def get_coediting_network(sqlite_db_file, author_identifier='author_id', time_fr
         return n, node_info, edge_info
     else:
         raise Exception('Not implemented network engine.')
-    
+
 def get_coauthorship_network(sqlite_db_file, author_identifier='author_id', time_from=None, time_to=None):
     """
     Returns coauthorship network containing links between authors who coedited at least one code
@@ -444,13 +444,13 @@ def get_coauthorship_network(sqlite_db_file, author_identifier='author_id', time
 
     if author_identifier == 'author_id':
         _ensure_author_id_exists(sqlite_db_file)
-    
+
     con = sqlite3.connect(sqlite_db_file)
     edits = pd.read_sql("""SELECT original_commit_deletion AS pre_commit,
                                   commit_hash AS post_commit,
                                   filename
                            FROM edits""", con)
-    
+
     if author_identifier == 'author_id':
         commits = pd.read_sql("""SELECT hash,
                                     author_id as author_identifier,
@@ -529,7 +529,7 @@ def get_bipartite_network(sqlite_db_file, author_identifier='author_id', time_fr
 
     if author_identifier == 'author_id':
         _ensure_author_id_exists(sqlite_db_file)
-    
+
     con = sqlite3.connect(sqlite_db_file)
     edits = pd.read_sql("""SELECT commit_hash AS post_commit,
                                   filename

@@ -1116,6 +1116,8 @@ def _format_edits_df(edits_df):
     :return:
         *pandas.DataFrame* – formatted dataframe
     """
+    # Some column types are float and not int (as one may expect from their content) as they can
+    # contain None values (e.g., levenshtein_dist, or total_added_lines).
     column_types = {
         'commit_hash': 'str',
         'edit_type': 'str',

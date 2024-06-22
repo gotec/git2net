@@ -249,7 +249,7 @@ def test_get_commit_editing_dag_1(sqlite_db_file, git_repo_dir):
 
     assert len(dag.isolate_nodes()) == 0
     assert len(dag.nodes) == 36
-    assert len(dag.successors[None]) == 12
+    assert len(dag.successors['None']) == 12
 
 
 def test_get_commit_editing_dag_2(sqlite_db_file, git_repo_dir):
@@ -265,7 +265,7 @@ def test_get_commit_editing_dag_2(sqlite_db_file, git_repo_dir):
 
     assert len(dag.isolate_nodes()) == 0
     assert len(dag.nodes) == 15
-    assert len(dag.successors[None]) == 6
+    assert len(dag.successors['None']) == 6
 
 
 def test_get_commit_editing_dag_3(sqlite_db_file, git_repo_dir):
@@ -283,7 +283,7 @@ def test_get_commit_editing_dag_3(sqlite_db_file, git_repo_dir):
 
     assert len(dag.isolate_nodes()) == 0
     assert len(dag.nodes) == 17
-    assert len(dag.successors[None]) == 1
+    assert len(dag.successors['None']) == 1
 
 
 def test_get_coediting_network(sqlite_db_file, git_repo_dir):

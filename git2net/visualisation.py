@@ -307,7 +307,7 @@ def get_commit_editing_dag(sqlite_db_file, time_from=None, time_to=None, filenam
 
     data['time'] = [
         int(t/(10**9) - tz) for t, tz in
-        zip(pd.to_datetime(data.time, format='%Y-%m-%d %H:%M:%S').view('int64'), data.timezone)
+        zip(pd.to_datetime(data.time, format='%Y-%m-%d %H:%M:%S').astype('int'), data.timezone)
     ]
 
     data = data.drop(['timezone'], axis=1)
@@ -391,7 +391,7 @@ def get_coediting_network(sqlite_db_file, author_identifier='author_id', time_fr
 
     data['time'] = [
         int(t/(10**9) - tz) for t, tz in
-        zip(pd.to_datetime(data.time, format='%Y-%m-%d %H:%M:%S').view('int64'), data.timezone)
+        zip(pd.to_datetime(data.time, format='%Y-%m-%d %H:%M:%S').astype('int'), data.timezone)
     ]
 
     data = data[['pre_author', 'post_author', 'time', 'levenshtein_dist']]

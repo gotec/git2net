@@ -8,19 +8,19 @@ def disambiguate_aliases_db(sqlite_db_file, method='gambit', **quargs):
     Disambiguates author aliases in a given SQLite database mined with `git2net`.
     The disambiguation is performed using the Python package `gambit`.
     Internally, `disambiguate_aliases_db` calls the function `gambit.disambiguate_aliases <https://github.com/gotec/gambit/blob/main/gambit/main.py>`_.
-    
+
     :param str sqlite_db_file: path to SQLite database
     :param str method: disambiguation method from {"gambit", "bird", "simple"}
-    :param \**quargs: hyperparameters for the gambit and bird algorithms;
+    :param **quargs: hyperparameters for the gambit and bird algorithms;
         **gambit**:
         thresh (*float*) – similarity threshold  from interval 0 to 1,
         sim (*str*) – similarity measure from {'lev', 'jw'},
         **bird**:
         thresh (*float*) – similarity threshold  from interval 0 to 1
-                          
+
     :return:
         creates new column with unique `author_id` in the `commits` table of the provided database
-    """
+    """  # noqa
 
     with sqlite3.connect(sqlite_db_file) as con:
         aliases = pd.read_sql("""SELECT author_name AS alias_name,

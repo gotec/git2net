@@ -913,13 +913,13 @@ def _extract_edits_merge(git_repo, commit, modification_info,
     for parent_blame in parent_blames:
         comp = parent_blame.merge(current_blame, on=comp_cols+['_count'],
                                   how='outer', indicator=True)
-        comp['_action'] = np.nan
+        comp['_action'] = None
 
         comp.loc[comp['_merge'] == 'both', '_action'] = 'accepted'
         comp.loc[comp['_merge'] == 'right_only', '_action'] = 'added'
         comp.loc[comp['_merge'] == 'left_only', '_action'] = 'deleted'
 
-        assert comp['_action'].isnull().any() is False
+        assert not comp['_action'].isnull().any()
 
         drop_cols = ['_count', '_merge', '_action']
 
@@ -1107,6 +1107,51 @@ def _check_mailmap(name, email, git_repo):
     return name, email
 
 
+def _format_edits_df(edits_df):
+    """
+    Formats the edits dataframe to the desired column order and data types.
+
+    :param pandas.DataFrame edits_df: dataframe with edits
+
+    :return:
+        *pandas.DataFrame* – formatted dataframe
+    """
+    column_types = {
+        'commit_hash': 'str',
+        'edit_type': 'str',
+        'filename': 'str',
+        'levenshtein_dist': 'float',
+        'modification_type': 'str',
+        'new_path': 'str',
+        'old_path': 'str',
+        'original_commit_addition': 'str',
+        'original_commit_deletion': 'str',
+        'original_file_path_addition': 'str',
+        'original_file_path_deletion': 'str',
+        'original_line_no_addition': 'str',
+        'original_line_no_deletion': 'str',
+        'post_entropy': 'float',
+        'post_len_in_chars': 'float',
+        'post_len_in_lines': 'float',
+        'post_starting_line_no': 'float',
+        'pre_entropy': 'float',
+        'pre_len_in_chars': 'float',
+        'pre_len_in_lines': 'float',
+        'pre_starting_line_no': 'float',
+        'total_added_lines': 'float',
+        'total_removed_lines': 'float'
+    }
+    # Ensure that all columns are present. If not, add them with None values.
+    for column in column_types.keys():
+        if column not in edits_df.columns:
+            edits_df[column] = None
+
+    edits_df = edits_df.astype(column_types)
+    edits_df = edits_df[sorted(edits_df.columns)]
+
+    return edits_df
+
+
 def _process_commit(args):
     """
     Extracts information on commit and all edits made with the commit. As this function is run in
@@ -1167,7 +1212,7 @@ def _process_commit(args):
                 c['branches'] = ','.join(commit.branches)
 
                 # parse modification
-                df_edits = pd.DataFrame()
+                df_edits_list = []
                 if commit.merge and args['extraction_settings']['extract_merges']:
                     # Git does not create a modification if own changes are accpeted
                     # during a merge. Therefore, the edited files are extracted
@@ -1203,12 +1248,11 @@ def _process_commit(args):
                                 modification_info['old_path'] = edited_file_path
                                 modification_info['modification_type'] = 'merge_self_accept'
 
-                                df_edits = pd.concat(
-                                    [df_edits,
+                                df_edits_list.append(
                                      _extract_edits_merge(
                                          git_repo, commit, modification_info,
-                                         args['extraction_settings'])],
-                                    axis=0, ignore_index=True, sort=True)
+                                         args['extraction_settings'])
+                                )
                             except GitCommandError:
                                 # A GitCommandError occurs if the file was deleted. In
                                 # this case it currently has no content.
@@ -1225,13 +1269,11 @@ def _process_commit(args):
                                     modification_info['old_path'] = edited_file_path
                                     modification_info['modification_type'] = 'merge_self_accept'
 
-                                    df_edits = pd.concat(
-                                        [df_edits,
+                                    df_edits_list.append(
                                          _extract_edits_merge(
                                              git_repo, commit, modification_info,
-                                             args['extraction_settings'])],
-                                        axis=0, ignore_index=True, sort=True)
-
+                                             args['extraction_settings'])
+                                    )
                 else:
                     if (args['extraction_settings']['max_modifications'] > 0) and \
                        (len(commit.modified_files) >
@@ -1252,12 +1294,22 @@ def _process_commit(args):
                                 if modification.old_path.startswith(x + os.sep):
                                     exclude_file = True
                         if not exclude_file:
-                            df_edits = pd.concat(
-                                [df_edits,
-                                 _extract_edits(git_repo, commit,
-                                                modification,
-                                                args['extraction_settings'])],
-                                axis=0, ignore_index=True, sort=True)
+                            df_edits_list.append(
+                                _extract_edits(
+                                    git_repo, commit, modification,
+                                    args['extraction_settings'])
+                            )
+
+                # Remove empty dataframes, sort the columns, and align the data types to ensure
+                # compatibility with the latest pandas version.
+                df_edits_list = [_format_edits_df(x) for x in df_edits_list if not x.empty]
+                if len(df_edits_list) == 0:
+                    df_edits = pd.DataFrame()
+                else:
+                    df_edits = pd.concat(
+                        df_edits_list,
+                        axis=0, ignore_index=True, sort=True
+                    )
 
                 df_commit = pd.DataFrame(c, index=[0])
 
@@ -1273,7 +1325,7 @@ def _process_commit(args):
                     redirected_stderr.endswith('git2net.extraction.TimeoutException:')):
                 extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
                 log = ('error', 'processing error: ' + commit.hash)
-                exception = redirected_stderr
+                exception = exception
 
         if pd.isnull(exception) and timeout.timed_out:
             log = ('warning', 'processing timeout: ' + commit.hash)
@@ -1868,7 +1920,7 @@ def mine_github(github_url, git_repo_dir, sqlite_db_file, branch=None,
     :param str sqlite_db_file: path (including database name) where the sqlite database will be created
     :param str branch: The branch of the github project that will be checked out and mined. If no
         branch is provided the default branch of the repository is used.
-    :param \**kwargs: arguments that will be passed on to mine_git_repo
+    :param **kwargs: arguments that will be passed on to mine_git_repo
 
     :return:
         - git repository will be cloned to specified location

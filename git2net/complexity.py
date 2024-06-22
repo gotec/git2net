@@ -191,6 +191,21 @@ def _compute_complexity_measures(args):
     return result_df
 
 
+def _init(git_repo_dir, git_init_lock_):
+    """
+    Initialises the git repository lock for parallel processing. This is required as the git
+    repository cannot be accessed by multiple processes at the same time.
+
+    :param str git_repo_dir: path to the git repository that is analysed
+    :param multiprocessing.Lock git_init_lock_: lock for the git repository
+
+    :return:
+        sets the global variable `git_init_lock` to the provided lock.
+    """
+    global git_init_lock
+    git_init_lock = git_init_lock_
+
+
 def compute_complexity(
     git_repo_dir,
     sqlite_db_file,
@@ -291,10 +306,6 @@ def compute_complexity(
         for idx, row in total_compute.iterrows()
         if not (row.commit_hash, row.old_path, row.new_path) in already_done
     ]
-
-    def _init(git_repo_dir, git_init_lock_):
-        global git_init_lock
-        git_init_lock = git_init_lock_
 
     with multiprocessing.Pool(no_of_processes, initializer=_init,
                               initargs=(git_repo_dir, git_init_lock)) as p:

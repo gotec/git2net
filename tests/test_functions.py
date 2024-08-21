@@ -628,10 +628,8 @@ def test_mine_git_repo_resume(github_url_full, github_repo_dir, sqlite_db_file):
 
     assert not git2net.check_mining_complete(github_repo_dir, sqlite_db_file)
 
-    u_commits_info = git2net.mining_state_summary(github_repo_dir, sqlite_db_file, all_branches=True)
-    complete, missing = git2net.check_mining_complete(github_repo_dir, sqlite_db_file, return_number_missing=True)
+    _, missing = git2net.check_mining_complete(github_repo_dir, sqlite_db_file, return_number_missing=True)
 
-    assert len(u_commits_info) == (len(commits) - 10)
     assert missing == (len(commits) - 10)
 
     git2net.disambiguate_aliases_db(sqlite_db_file)

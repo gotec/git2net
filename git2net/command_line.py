@@ -28,12 +28,12 @@ def main():
                                               "edits will be written to an "
                                               "SQLite database at the "
                                               "provided path."))
-    
+
     disambiguate = subparsers.add_parser('disambiguate',
                                          description=("Disambiguate author "
                                                       "identities in a given "
                                                       "SQLite database."))
-    
+
     graph = subparsers.add_parser('graph',
                                   description=("Generate graph projections "
                                                "from commit and edit "
@@ -50,7 +50,7 @@ def main():
                                                     "for a given git repository. "
                                                     "The results are added to an "
                                                     "existing SQLite database."))
-    
+
     mine.add_argument('repo',
                       help=("Path to a local copy of the git reposity that "
                             "will be mined."),
@@ -135,13 +135,16 @@ def main():
                               help=("Path to the database where results "
                                     "will be stored."),
                               type=str)
-    disambiguate.add_argument('--method',
-                      help=("Extract lines that are not accepted during a "
-                            "merge as deletions."),
-                      type=str,
-                      dest='method',
-                      default='gambit')
-    
+    disambiguate.add_argument(
+        '--method',
+        help=(
+            "Extract lines that are not accepted during a "
+            "merge as deletions."
+        ),
+        type=str,
+        dest='method',
+        default='gambit')
+
     # "graph" options
     sp_graph = graph.add_subparsers(dest='projection',
                                     help='Type of graph projection.')
@@ -193,21 +196,32 @@ def main():
                         dest='filename', default=None, type=str)
 
     # "complexity" options
-    complexity.add_argument('repo',
-                      help=("Path to a local copy of the git reposity that "
-                            "will be analysed."),
-                      type=str)
-    complexity.add_argument('database',
-                      help=("Path to the database where results will be "
-                            "stored."),
-                      type=str)
-    complexity.add_argument('--numprocesses',
-                      help=("Number of CPU cores used for multi-core "
-                            "processing. Defaults to number of CPU cores."),
-                      default=os.cpu_count(),
-                      type=int,
-                      dest='numprocesses')
-        
+    complexity.add_argument(
+        'repo',
+        help=(
+            "Path to a local copy of the git reposity that "
+            "will be analysed."
+        ),
+        type=str)
+    complexity.add_argument(
+        'database',
+        help=(
+            "Path to the database where results will be "
+            "stored."
+        ),
+        type=str
+    )
+    complexity.add_argument(
+        '--numprocesses',
+        help=(
+            "Number of CPU cores used for multi-core "
+            "processing. Defaults to number of CPU cores."
+        ),
+        default=os.cpu_count(),
+        type=int,
+        dest='numprocesses'
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -278,4 +292,3 @@ def main():
             t.write_file(args.csvfile)
     elif args.command == 'complexity':
         compute_complexity(args.repo, args.database, no_of_processes=args.numprocesses)
-        

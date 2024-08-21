@@ -22,15 +22,11 @@ import datetime
 
 import pathpy as pp
 import re
-import lizard
 import collections
 import git
 from git.exc import GitCommandError
 
 from git2net import __version__
-
-import time
-import sys
 
 import json
 
@@ -50,16 +46,16 @@ rel_path = 'helpers/binary-extensions/binary-extensions.json'
 with open(os.path.join(abs_path, rel_path)) as json_file:
     binary_extensions = json.load(json_file)
 
-    
+
 class TimeoutException(Exception):
     pass
 
-            
+
 class Timeout():
     """
     Context manager that raises TimeoutException after wait of length timeout.
     If timeout is <= 0, no timer is started.
-    
+
     """
     def __init__(self, timeout):
         self.timeout = timeout
@@ -67,7 +63,7 @@ class Timeout():
         self.active = False
         self.target_tid = threading.current_thread().ident
         self.timer = None
-        
+
     def __enter__(self):
         if self.timeout > 0:
             self.timer = threading.Timer(self.timeout, self.stop)
@@ -82,13 +78,15 @@ class Timeout():
         if exc_type == TimeoutException:
             return True
         return False
-        
+
     def stop(self):
         self.timed_out = True
         # raise TimeoutException in main thread. Inspired by implementation in 'stopit'
-        ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(self.target_tid),
-                                                     ctypes.py_object(TimeoutException))
-    
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(
+            ctypes.c_long(self.target_tid),
+            ctypes.py_object(TimeoutException)
+        )
+
 
 def _get_block_length(lines, k):
     """
@@ -324,32 +322,34 @@ def _parse_porcelain_blame(blame):
     :return:
         *dict* – content of blame as pandas dataframe
     """
-    l = {'original_commit_hash': [],
-         'original_line_no': [],
-         'original_file_path': [],
-         'line_content': [],
-         'line_number': []}
+    line_dict = {
+        'original_commit_hash': [],
+        'original_line_no': [],
+        'original_file_path': [],
+        'line_content': [],
+        'line_number': []
+    }
     start_of_line_info = True
     prefix = '\t'
     line_number = 1
     filename = ''  # Initialise filename variable.
     for idx, line in enumerate(blame.split('\n')):
         if line.startswith(prefix):
-            l['original_file_path'].append(filename)
-            l['line_content'].append(line[len(prefix):])
-            l['line_number'].append(line_number)
+            line_dict['original_file_path'].append(filename)
+            line_dict['line_content'].append(line[len(prefix):])
+            line_dict['line_number'].append(line_number)
             line_number += 1
             start_of_line_info = True
         else:
             entries = line.split(' ')
             if start_of_line_info:
-                l['original_commit_hash'].append(entries[0])
-                l['original_line_no'].append(entries[1])
+                line_dict['original_commit_hash'].append(entries[0])
+                line_dict['original_line_no'].append(entries[1])
                 start_of_line_info = False
             elif entries[0] == 'filename':
                 filename = entries[1]
 
-    blame_info = pd.DataFrame(l)
+    blame_info = pd.DataFrame(line_dict)
     return blame_info
 
 
@@ -610,14 +610,14 @@ def _get_edit_details(edit, commit, deleted_lines, added_lines,
 def is_binary_file(filename, file_content):
     """
     Detects if a file with given content is a binary file.
-    
+
     :param str filename: name of the file including its file extension
     :param str file_content: content of the file
-    
+
     :returns:
         *bool* – True if binary file is detected, otherwise False
     """
-    
+
     if filename is None:
         return False
     else:
@@ -740,7 +740,7 @@ def _extract_edits(git_repo, commit, modification, extraction_settings):
     else:
         # Next, metadata on all identified edits is extracted and added to a
         # pandas DataFrame.
-        l = []
+        line_dict = []
         for _, edit in edits.iterrows():
             e = {}
             # Extract general information.
@@ -763,9 +763,9 @@ def _extract_edits(git_repo, commit, modification, extraction_settings):
                                        added_lines, blame_info_parent,
                                        blame_info_commit, extraction_settings))
 
-            l.append(e)
+            line_dict.append(e)
 
-        edits_info = pd.DataFrame(l)
+        edits_info = pd.DataFrame(line_dict)
         return edits_info
 
 
@@ -777,7 +777,8 @@ def _extract_edits_merge(git_repo, commit, modification_info,
 
     :param str git_repo: pydriller Git object
     :param pydriller.Commit commit: pydriller Commit object
-    :param pydriller.ModifiedFile modification_info: information on the modification as stored in a pydriller ModifiedFile.
+    :param pydriller.ModifiedFile modification_info: information on the modification as stored in a
+        pydriller ModifiedFile.
     :param dict extraction_settings: settings for the extraction
 
     :return:
@@ -912,13 +913,13 @@ def _extract_edits_merge(git_repo, commit, modification_info,
     for parent_blame in parent_blames:
         comp = parent_blame.merge(current_blame, on=comp_cols+['_count'],
                                   how='outer', indicator=True)
-        comp['_action'] = np.nan
+        comp['_action'] = None
 
         comp.loc[comp['_merge'] == 'both', '_action'] = 'accepted'
         comp.loc[comp['_merge'] == 'right_only', '_action'] = 'added'
         comp.loc[comp['_merge'] == 'left_only', '_action'] = 'deleted'
 
-        assert comp['_action'].isnull().any() == False
+        assert not comp['_action'].isnull().any()
 
         drop_cols = ['_count', '_merge', '_action']
 
@@ -992,14 +993,14 @@ def _get_edited_file_paths_since_split(git_repo, commit):
     :return:
         *List* – list of paths to the edited files
     """
-    
+
     def expand_dag(dag, leafs):
         """
         Expands a dag by adding the parents of a given set of nodes to the dag.
 
         :param pathpy.DAG dag: pathpy DAG object
         :param set leafs: set of nodes that are expanded
-        
+
         :return:
             *pathpy.DAG* – the expanded pathpy DAG object
         """
@@ -1106,6 +1107,53 @@ def _check_mailmap(name, email, git_repo):
     return name, email
 
 
+def _format_edits_df(edits_df):
+    """
+    Formats the edits dataframe to the desired column order and data types.
+
+    :param pandas.DataFrame edits_df: dataframe with edits
+
+    :return:
+        *pandas.DataFrame* – formatted dataframe
+    """
+    # Some column types are float and not int (as one may expect from their content) as they can
+    # contain None values (e.g., levenshtein_dist, or total_added_lines).
+    column_types = {
+        'commit_hash': 'str',
+        'edit_type': 'str',
+        'filename': 'str',
+        'levenshtein_dist': 'float',
+        'modification_type': 'str',
+        'new_path': 'str',
+        'old_path': 'str',
+        'original_commit_addition': 'str',
+        'original_commit_deletion': 'str',
+        'original_file_path_addition': 'str',
+        'original_file_path_deletion': 'str',
+        'original_line_no_addition': 'str',
+        'original_line_no_deletion': 'str',
+        'post_entropy': 'float',
+        'post_len_in_chars': 'float',
+        'post_len_in_lines': 'float',
+        'post_starting_line_no': 'float',
+        'pre_entropy': 'float',
+        'pre_len_in_chars': 'float',
+        'pre_len_in_lines': 'float',
+        'pre_starting_line_no': 'float',
+        'total_added_lines': 'float',
+        'total_removed_lines': 'float'
+    }
+    # Ensure that all columns are present. If not, add them with None values.
+    for column in column_types.keys():
+        if column not in edits_df.columns:
+            edits_df[column] = None
+
+    edits_df = edits_df.astype(column_types)
+    edits_df = edits_df[sorted(edits_df.columns)]
+
+    return edits_df
+
+
 def _process_commit(args):
     """
     Extracts information on commit and all edits made with the commit. As this function is run in
@@ -1134,14 +1182,13 @@ def _process_commit(args):
 
             with Timeout(args['extraction_settings']['timeout']) as timeout:
                 author_name, author_email = _check_mailmap(commit.author.name,
-                                                   commit.author.email,
-                                                   git_repo)
-
+                                                           commit.author.email,
+                                                           git_repo)
 
                 committer_name, committer_email = _check_mailmap(commit.committer.name,
                                                                  commit.committer.email,
                                                                  git_repo)
-                                
+
                 # parse commit
                 c = {}
                 c['hash'] = commit.hash
@@ -1167,7 +1214,7 @@ def _process_commit(args):
                 c['branches'] = ','.join(commit.branches)
 
                 # parse modification
-                df_edits = pd.DataFrame()
+                df_edits_list = []
                 if commit.merge and args['extraction_settings']['extract_merges']:
                     # Git does not create a modification if own changes are accpeted
                     # during a merge. Therefore, the edited files are extracted
@@ -1185,7 +1232,6 @@ def _process_commit(args):
                                             'edits': pd.DataFrame()}
                         return extracted_result, log, exception
 
-
                     for edited_file_path in edited_file_paths:
                         exclude_file = False
                         for x in args['extraction_settings']['exclude']:
@@ -1195,22 +1241,20 @@ def _process_commit(args):
                         if not exclude_file:
                             modification_info = {}
                             try:
-                                file_content = git.Git(str(git_repo.path)) \
-                                                  .show('{}:{}'
-                                                        .format(commit.hash,
-                                                                edited_file_path)) 
+                                file_content = git.Git(  # noqa
+                                    str(git_repo.path)
+                                ).show('{}:{}'.format(commit.hash, edited_file_path))
 
                                 modification_info['filename'] = edited_file_path.split(os.sep)[-1]
                                 modification_info['new_path'] = edited_file_path
                                 modification_info['old_path'] = edited_file_path
                                 modification_info['modification_type'] = 'merge_self_accept'
 
-                                df_edits = pd.concat(
-                                    [df_edits,
+                                df_edits_list.append(
                                      _extract_edits_merge(
                                          git_repo, commit, modification_info,
-                                         args['extraction_settings'])],
-                                    axis=0, ignore_index=True, sort=True)
+                                         args['extraction_settings'])
+                                )
                             except GitCommandError:
                                 # A GitCommandError occurs if the file was deleted. In
                                 # this case it currently has no content.
@@ -1227,13 +1271,11 @@ def _process_commit(args):
                                     modification_info['old_path'] = edited_file_path
                                     modification_info['modification_type'] = 'merge_self_accept'
 
-                                    df_edits = pd.concat(
-                                        [df_edits,
+                                    df_edits_list.append(
                                          _extract_edits_merge(
                                              git_repo, commit, modification_info,
-                                             args['extraction_settings'])],
-                                        axis=0, ignore_index=True, sort=True)
-
+                                             args['extraction_settings'])
+                                    )
                 else:
                     if (args['extraction_settings']['max_modifications'] > 0) and \
                        (len(commit.modified_files) >
@@ -1254,29 +1296,38 @@ def _process_commit(args):
                                 if modification.old_path.startswith(x + os.sep):
                                     exclude_file = True
                         if not exclude_file:
-                            df_edits = pd.concat(
-                                [df_edits,
-                                 _extract_edits(git_repo, commit,
-                                                modification,
-                                                args['extraction_settings'])],
-                                axis=0, ignore_index=True, sort=True)
+                            df_edits_list.append(
+                                _extract_edits(
+                                    git_repo, commit, modification,
+                                    args['extraction_settings'])
+                            )
+
+                # Remove empty dataframes, sort the columns, and align the data types to ensure
+                # compatibility with the latest pandas version.
+                df_edits_list = [_format_edits_df(x) for x in df_edits_list if not x.empty]
+                if len(df_edits_list) == 0:
+                    df_edits = pd.DataFrame()
+                else:
+                    df_edits = pd.concat(
+                        df_edits_list,
+                        axis=0, ignore_index=True, sort=True
+                    )
 
                 df_commit = pd.DataFrame(c, index=[0])
 
                 extracted_result = {'commit': df_commit, 'edits': df_edits}
 
-
         redirected_stderr = redirected_stderr_ctx_mgr.getvalue().strip()
 
         if redirected_stderr:
-            # Something was written to stderr. This could be a real error, however, often 
+            # Something was written to stderr. This could be a real error, however, often
             # it is just a notification that an exception was ignored while deleting an object
             # after the threading timeout triggered. In this case, we ignore the message.
-            if not (redirected_stderr.startswith('Exception ignored in:') and \
+            if not (redirected_stderr.startswith('Exception ignored in:') and
                     redirected_stderr.endswith('git2net.extraction.TimeoutException:')):
                 extracted_result = {'commit': pd.DataFrame(), 'edits': pd.DataFrame()}
                 log = ('error', 'processing error: ' + commit.hash)
-                exception = redirected_stderr
+                exception = exception
 
         if pd.isnull(exception) and timeout.timed_out:
             log = ('warning', 'processing timeout: ' + commit.hash)
@@ -1287,17 +1338,18 @@ def _process_commit(args):
     except Exception as e:
         return e
 
+
 def _log_commit_results(log, exception):
     """
     Processes log and exception returned from _process_commit and creates corresponding entries.
-    
+
     :param tuple log: tuple of logging type and logging message if any were created, otherwise None
     :param str exception: text of exception if any was raised, otherwise None
-    
+
     :return:
         log message will be written and exception raised if one occurred
     """
-    
+
     LOG = logging.getLogger('git2net')
 
     if pd.notnull(log):
@@ -1310,7 +1362,7 @@ def _log_commit_results(log, exception):
             Exception(("Not implemented logging type. Please report on "
                        "https://github.com/gotec/git2net."))
 
-            
+
 def _process_repo_serial(git_repo_dir, sqlite_db_file, commits,
                          extraction_settings):
     """
@@ -1325,10 +1377,10 @@ def _process_repo_serial(git_repo_dir, sqlite_db_file, commits,
         SQLite database will be written at specified location
     """
 
-    LOG = logging.getLogger('git2net')
-    
+    LOG = logging.getLogger('git2net')  # noqa
+
     for commit in tqdm(commits, desc='Serial'):
-        with logging_redirect_tqdm(tqdm_class=tqdm):            
+        with logging_redirect_tqdm(tqdm_class=tqdm):
             args = {'git_repo_dir': git_repo_dir, 'commit_hash': commit.hash,
                     'extraction_settings': extraction_settings}
             res = _process_commit(args)
@@ -1368,8 +1420,8 @@ def _process_repo_parallel(git_repo_dir, sqlite_db_file, commits,
         SQLite database will be written at specified location
     """
 
-    LOG = logging.getLogger('git2net')
-    
+    LOG = logging.getLogger('git2net')  # noqa
+
     args = [{'git_repo_dir': git_repo_dir, 'commit_hash': commit.hash,
              'extraction_settings': extraction_settings}
             for commit in commits]
@@ -1381,7 +1433,7 @@ def _process_repo_parallel(git_repo_dir, sqlite_db_file, commits,
                   .format(extraction_settings['no_of_processes'])) as pbar:
             with logging_redirect_tqdm(tqdm_class=tqdm):
                 for res in p.imap_unordered(_process_commit, args, chunksize=extraction_settings['chunksize']):
-                    
+
                     if isinstance(res, Exception):
                         raise res
                     else:
@@ -1529,7 +1581,7 @@ def check_mining_complete(git_repo_dir, sqlite_db_file, commits=[],
         *bool* – True if all commits are included in the database, otherwise False
     """
     LOG = logging.getLogger('git2net')
-    
+
     git_repo = pydriller.Git(git_repo_dir)
     if os.path.exists(sqlite_db_file):
         try:
@@ -1572,7 +1624,7 @@ def mining_state_summary(git_repo_dir, sqlite_db_file, all_branches=False):
         *pandas.DataFrame* – dataframe with details on missing commits
     """
     LOG = logging.getLogger('git2net')
-    
+
     git_repo = pydriller.Git(git_repo_dir)
     if os.path.exists(sqlite_db_file):
         try:
@@ -1611,8 +1663,8 @@ def mining_state_summary(git_repo_dir, sqlite_db_file, all_branches=False):
         u_commit_info['hash'].append(c.hash)
         try:
             u_commit_info['is_merge'].append(c.merge)
-        except:
-            LOG.error('Error reading "merge" for', c.hash)
+        except Exception as e:
+            LOG.error(f'Error {e} reading "merge" for', c.hash)
             u_commit_info['is_merge'].append(None)
 
         if c.merge:
@@ -1625,21 +1677,21 @@ def mining_state_summary(git_repo_dir, sqlite_db_file, all_branches=False):
 
         try:
             u_commit_info['author_name'].append(c.author.name)
-        except:
-            LOG.error('Error reading "author.name" for', c.hash)
+        except Exception as e:
+            LOG.error(f'Error {e} reading "author.name" for', c.hash)
             u_commit_info['author_name'].append(None)
 
         try:
             u_commit_info['author_email'].append(c.author.email)
-        except:
-            LOG.error('Error reading "author.email" for', c.hash)
+        except Exception as e:
+            LOG.error(f'Error {e} reading "author.email" for', c.hash)
             u_commit_info['author_email'].append(None)
 
         try:
             u_commit_info['author_date'].append(
                 c.author_date.strftime('%Y-%m-%d %H:%M:%S'))
-        except:
-            LOG.error('Error reading "author_date" for', c.hash)
+        except Exception as e:
+            LOG.error(f'Error {e} reading "author_date" for', c.hash)
             u_commit_info['author_date'].append(None)
 
     u_commits_info = pd.DataFrame(u_commit_info)
@@ -1676,7 +1728,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
         SQLite database will be written at specified location
     """
     LOG = logging.getLogger('git2net')
-    
+
     git_version = check_output(['git', '--version']).strip().decode("utf-8")
 
     parsed_git_version = re.search(r'(\d+)\.(\d+)\.(\d+)', git_version) \
@@ -1779,7 +1831,8 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
         LOG.info("Found no database on provided path. Starting from scratch.")
         try:
             repo_url = git_repo.repo.remotes.origin.url
-        except:
+        except Exception as e:
+            LOG.warning(f"Error {e} reading repository url.")
             repo_url = git_repo_dir
 
         with sqlite3.connect(sqlite_db_file) as con:
@@ -1847,7 +1900,7 @@ def mine_git_repo(git_repo_dir, sqlite_db_file, commits=[],
                                WHERE hash = (:hash)""",
                             {'branches': ','.join(b), 'hash': c})
         con.commit()
-     
+
     if len(u_commits) > 0:
         if extraction_settings['no_of_processes'] > 1:
             _process_repo_parallel(git_repo_dir, sqlite_db_file, u_commits,
@@ -1862,18 +1915,21 @@ def mine_github(github_url, git_repo_dir, sqlite_db_file, branch=None,
     """
     Clones a repository from github and starts the mining process.
 
-    :param str github_url: url to the publicly accessible github project that will be mined can be priovided as full url or <OWNER>/<REPOSITORY>
-    :param str git_repo_dir: path to the git repository that is mined if path ends with '/' an additional folder will be created
+    :param str github_url: url to the publicly accessible github project that will be mined can be
+        priovided as full url or <OWNER>/<REPOSITORY>
+    :param str git_repo_dir: path to the git repository that is mined if path ends with '/' an
+        additional folder will be created
     :param str sqlite_db_file: path (including database name) where the sqlite database will be created
-    :param str branch: The branch of the github project that will be checked out and mined. If no branch is provided the default branch of the repository is used.
-    :param \**kwargs: arguments that will be passed on to mine_git_repo
+    :param str branch: The branch of the github project that will be checked out and mined. If no
+        branch is provided the default branch of the repository is used.
+    :param **kwargs: arguments that will be passed on to mine_git_repo
 
     :return:
         - git repository will be cloned to specified location
         - SQLite database will be written at specified location
-    """
-    LOG = logging.getLogger('git2net')    
-    
+    """  # noqa
+    LOG = logging.getLogger('git2net')
+
     # github_url can either be provided as full url or as in form <USER>/<REPO>
     user_repo_pattern = r'^([^\/]*)\/([^\/]*)$'
     full_url_pattern = r'^https:\/\/github\.com\/([^\/]*)\/([^\/.]*)(\.git)?$'

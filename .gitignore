@@ -10,3 +10,4 @@ tmp.*
 /docs/build/*
 /test_repos/test_repo_1/*
 .coverage
+.DS_Store

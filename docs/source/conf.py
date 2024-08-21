@@ -12,11 +12,11 @@
 
 import os
 import sys
-from pkg_resources import get_distribution
+import importlib.metadata
 sys.path.insert(0, os.path.abspath('../../'))
 package_path = os.path.abspath('../..')
 os.environ['PYTHONPATH'] = ':'.join((package_path, os.environ.get('PYTHONPATH', '')))
-__version__ = get_distribution('git2net').version
+__version__ = importlib.metadata.version('git2net')
 
 # -- Project information -----------------------------------------------------
 
